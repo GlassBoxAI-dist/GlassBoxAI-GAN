@@ -1,0 +1,8 @@
+name    = "FacadedGan"
+uuid    = "5f8c2e0a-1b3d-4a6e-9c7f-0e2d4b8a1f35"
+version = "0.1.0"
+authors = ["Matthew Abbott"]
+license = "MIT"
+
+[compat]
+julia = "1.6"

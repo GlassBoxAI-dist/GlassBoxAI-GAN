@@ -1,0 +1,14 @@
+[package]
+name    = "facaded_gan_c"
+version = "0.1.0"
+edition = "2021"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
+
+[lib]
+name       = "facaded_gan_c"
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+facaded_gan_cuda = { path = ".." }

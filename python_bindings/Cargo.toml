@@ -1,0 +1,12 @@
+[package]
+name    = "facaded_gan"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name       = "facaded_gan"
+crate-type = ["cdylib"]
+
+[dependencies]
+facaded_gan_cuda = { path = ".." }
+pyo3 = { version = "0.22", features = ["extension-module"] }

@@ -1,0 +1,20 @@
+{
+  "name": "facaded-gan",
+  "version": "0.1.0",
+  "description": "Node.js bindings for the facaded_gan GAN library",
+  "main": "index.js",
+  "napi": {
+    "name": "facaded-gan",
+    "triples": {
+      "defaults": true
+    }
+  },
+  "license": "MIT",
+  "scripts": {
+    "build":       "napi build --platform --release",
+    "build:debug": "napi build --platform"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^2"
+  }
+}

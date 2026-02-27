@@ -1,0 +1,16 @@
+[package]
+name    = "facaded_gan_node"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name       = "facaded_gan_node"
+crate-type = ["cdylib"]
+
+[dependencies]
+facaded_gan_cuda = { path = ".." }
+napi             = { version = "2", features = ["napi8"] }
+napi-derive      = "2"
+
+[build-dependencies]
+napi-build = "2"

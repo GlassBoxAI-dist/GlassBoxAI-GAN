@@ -1,0 +1,798 @@
+{
+  "generator": {
+    "layers": [
+      {
+        "layer_type": "Dense",
+        "activation": "ReLU",
+        "input_size": 4,
+        "output_size": 8,
+        "weights": [
+          [
+            0.25306308,
+            0.35416874,
+            -0.13254882,
+            -0.37778798,
+            -0.20000277,
+            -0.118641876,
+            -0.22957046,
+            -0.6538825
+          ],
+          [
+            0.35333905,
+            1.0508419,
+            0.39455643,
+            0.48538324,
+            -0.1283276,
+            0.12743577,
+            -0.17632852,
+            -0.32863024
+          ],
+          [
+            -0.08717196,
+            0.030109389,
+            0.37225673,
+            0.13893618,
+            -0.54349005,
+            0.1061845,
+            -0.69552857,
+            -0.89039284
+          ],
+          [
+            -0.5166558,
+            0.2695363,
+            0.22577284,
+            0.34588534,
+            0.21532309,
+            -0.2258645,
+            -0.4967386,
+            -0.30109364
+          ]
+        ],
+        "bias": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "kernels": [],
+        "kernel_size": 0,
+        "stride": 0,
+        "padding": 0,
+        "in_channels": 0,
+        "out_channels": 0,
+        "in_width": 0,
+        "in_height": 0,
+        "out_width": 0,
+        "out_height": 0,
+        "bn_gamma": [],
+        "bn_beta": [],
+        "running_mean": [],
+        "running_var": [],
+        "bn_epsilon": 0.0,
+        "bn_momentum": 0.0,
+        "wq": [],
+        "wk": [],
+        "wv": [],
+        "wo": [],
+        "num_heads": 0,
+        "head_dim": 0,
+        "spectral_u": [],
+        "spectral_v": [],
+        "spectral_sigma": 0.0,
+        "layer_input": [],
+        "layer_output": [],
+        "pre_activation": [],
+        "is_training": true,
+        "cached_q": [],
+        "cached_k": [],
+        "cached_v": [],
+        "cached_scores": [],
+        "cached_attended": [],
+        "cached_normalized": [],
+        "cached_mean": [],
+        "cached_var": [],
+        "use_checkpoint": false,
+        "weight_grad": [],
+        "bias_grad": [],
+        "kernel_grad": [],
+        "bn_gamma_grad": [],
+        "bn_beta_grad": [],
+        "wq_grad": [],
+        "wk_grad": [],
+        "wv_grad": [],
+        "wo_grad": [],
+        "adam_t": 0,
+        "m_weight": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "v_weight": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "m_bias": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "v_bias": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "m_kernel": [],
+        "v_kernel": [],
+        "m_bn_gamma": [],
+        "v_bn_gamma": [],
+        "m_bn_beta": [],
+        "v_bn_beta": [],
+        "m_wq": [],
+        "v_wq": [],
+        "m_wk": [],
+        "v_wk": [],
+        "m_wv": [],
+        "v_wv": [],
+        "m_wo": [],
+        "v_wo": [],
+        "rms_weight": [],
+        "rms_bias": []
+      },
+      {
+        "layer_type": "Dense",
+        "activation": "Sigmoid",
+        "input_size": 8,
+        "output_size": 1,
+        "weights": [
+          [
+            -0.09391648
+          ],
+          [
+            -0.012299493
+          ],
+          [
+            -0.8106717
+          ],
+          [
+            -0.36702585
+          ],
+          [
+            0.039221782
+          ],
+          [
+            -0.03129844
+          ],
+          [
+            0.30423114
+          ],
+          [
+            -0.7048444
+          ]
+        ],
+        "bias": [
+          0.0
+        ],
+        "kernels": [],
+        "kernel_size": 0,
+        "stride": 0,
+        "padding": 0,
+        "in_channels": 0,
+        "out_channels": 0,
+        "in_width": 0,
+        "in_height": 0,
+        "out_width": 0,
+        "out_height": 0,
+        "bn_gamma": [],
+        "bn_beta": [],
+        "running_mean": [],
+        "running_var": [],
+        "bn_epsilon": 0.0,
+        "bn_momentum": 0.0,
+        "wq": [],
+        "wk": [],
+        "wv": [],
+        "wo": [],
+        "num_heads": 0,
+        "head_dim": 0,
+        "spectral_u": [],
+        "spectral_v": [],
+        "spectral_sigma": 0.0,
+        "layer_input": [],
+        "layer_output": [],
+        "pre_activation": [],
+        "is_training": true,
+        "cached_q": [],
+        "cached_k": [],
+        "cached_v": [],
+        "cached_scores": [],
+        "cached_attended": [],
+        "cached_normalized": [],
+        "cached_mean": [],
+        "cached_var": [],
+        "use_checkpoint": false,
+        "weight_grad": [],
+        "bias_grad": [],
+        "kernel_grad": [],
+        "bn_gamma_grad": [],
+        "bn_beta_grad": [],
+        "wq_grad": [],
+        "wk_grad": [],
+        "wv_grad": [],
+        "wo_grad": [],
+        "adam_t": 0,
+        "m_weight": [
+          [
+            0.0
+          ],
+          [
+            0.0
+          ],
+          [
+            0.0
+          ],
+          [
+            0.0
+          ],
+          [
+            0.0
+          ],
+          [
+            0.0
+          ],
+          [
+            0.0
+          ],
+          [
+            0.0
+          ]
+        ],
+        "v_weight": [
+          [
+            0.0
+          ],
+          [
+            0.0
+          ],
+          [
+            0.0
+          ],
+          [
+            0.0
+          ],
+          [
+            0.0
+          ],
+          [
+            0.0
+          ],
+          [
+            0.0
+          ],
+          [
+            0.0
+          ]
+        ],
+        "m_bias": [
+          0.0
+        ],
+        "v_bias": [
+          0.0
+        ],
+        "m_kernel": [],
+        "v_kernel": [],
+        "m_bn_gamma": [],
+        "v_bn_gamma": [],
+        "m_bn_beta": [],
+        "v_bn_beta": [],
+        "m_wq": [],
+        "v_wq": [],
+        "m_wk": [],
+        "v_wk": [],
+        "m_wv": [],
+        "v_wv": [],
+        "m_wo": [],
+        "v_wo": [],
+        "rms_weight": [],
+        "rms_bias": []
+      }
+    ],
+    "layer_count": 2,
+    "optimizer": "Adam",
+    "learning_rate": 0.001,
+    "momentum": 0.0,
+    "beta1": 0.9,
+    "beta2": 0.999,
+    "epsilon": 1e-8,
+    "weight_decay": 0.0,
+    "progressive_alpha": 1.0,
+    "current_res_level": 0,
+    "is_training": true
+  },
+  "discriminator": {
+    "layers": [
+      {
+        "layer_type": "Dense",
+        "activation": "ReLU",
+        "input_size": 4,
+        "output_size": 8,
+        "weights": [
+          [
+            -0.46989596,
+            0.08749765,
+            0.019377364,
+            -0.43317106,
+            0.14502548,
+            -0.2827725,
+            0.014544948,
+            0.248286
+          ],
+          [
+            0.22232488,
+            -0.46214914,
+            0.62386453,
+            0.57172364,
+            0.2952591,
+            -0.2580435,
+            0.14476143,
+            -0.2708202
+          ],
+          [
+            -0.096234195,
+            -0.2578549,
+            -0.06366927,
+            0.23551604,
+            -0.3134918,
+            -0.7618692,
+            0.77858067,
+            -0.5295411
+          ],
+          [
+            -0.63720345,
+            0.03919035,
+            0.23529565,
+            -0.7506182,
+            -0.7223149,
+            0.6938339,
+            0.31861532,
+            -0.26978743
+          ]
+        ],
+        "bias": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "kernels": [],
+        "kernel_size": 0,
+        "stride": 0,
+        "padding": 0,
+        "in_channels": 0,
+        "out_channels": 0,
+        "in_width": 0,
+        "in_height": 0,
+        "out_width": 0,
+        "out_height": 0,
+        "bn_gamma": [],
+        "bn_beta": [],
+        "running_mean": [],
+        "running_var": [],
+        "bn_epsilon": 0.0,
+        "bn_momentum": 0.0,
+        "wq": [],
+        "wk": [],
+        "wv": [],
+        "wo": [],
+        "num_heads": 0,
+        "head_dim": 0,
+        "spectral_u": [],
+        "spectral_v": [],
+        "spectral_sigma": 0.0,
+        "layer_input": [],
+        "layer_output": [],
+        "pre_activation": [],
+        "is_training": true,
+        "cached_q": [],
+        "cached_k": [],
+        "cached_v": [],
+        "cached_scores": [],
+        "cached_attended": [],
+        "cached_normalized": [],
+        "cached_mean": [],
+        "cached_var": [],
+        "use_checkpoint": false,
+        "weight_grad": [],
+        "bias_grad": [],
+        "kernel_grad": [],
+        "bn_gamma_grad": [],
+        "bn_beta_grad": [],
+        "wq_grad": [],
+        "wk_grad": [],
+        "wv_grad": [],
+        "wo_grad": [],
+        "adam_t": 0,
+        "m_weight": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "v_weight": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "m_bias": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "v_bias": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "m_kernel": [],
+        "v_kernel": [],
+        "m_bn_gamma": [],
+        "v_bn_gamma": [],
+        "m_bn_beta": [],
+        "v_bn_beta": [],
+        "m_wq": [],
+        "v_wq": [],
+        "m_wk": [],
+        "v_wk": [],
+        "m_wv": [],
+        "v_wv": [],
+        "m_wo": [],
+        "v_wo": [],
+        "rms_weight": [],
+        "rms_bias": []
+      },
+      {
+        "layer_type": "Dense",
+        "activation": "Sigmoid",
+        "input_size": 8,
+        "output_size": 1,
+        "weights": [
+          [
+            0.32160774
+          ],
+          [
+            -0.868598
+          ],
+          [
+            -0.087826476
+          ],
+          [
+            -0.609069
+          ],
+          [
+            0.3572974
+          ],
+          [
+            -0.27038392
+          ],
+          [
+            -0.3270596
+          ],
+          [
+            0.41094366
+          ]
+        ],
+        "bias": [
+          0.0
+        ],
+        "kernels": [],
+        "kernel_size": 0,
+        "stride": 0,
+        "padding": 0,
+        "in_channels": 0,
+        "out_channels": 0,
+        "in_width": 0,
+        "in_height": 0,
+        "out_width": 0,
+        "out_height": 0,
+        "bn_gamma": [],
+        "bn_beta": [],
+        "running_mean": [],
+        "running_var": [],
+        "bn_epsilon": 0.0,
+        "bn_momentum": 0.0,
+        "wq": [],
+        "wk": [],
+        "wv": [],
+        "wo": [],
+        "num_heads": 0,
+        "head_dim": 0,
+        "spectral_u": [],
+        "spectral_v": [],
+        "spectral_sigma": 0.0,
+        "layer_input": [],
+        "layer_output": [],
+        "pre_activation": [],
+        "is_training": true,
+        "cached_q": [],
+        "cached_k": [],
+        "cached_v": [],
+        "cached_scores": [],
+        "cached_attended": [],
+        "cached_normalized": [],
+        "cached_mean": [],
+        "cached_var": [],
+        "use_checkpoint": false,
+        "weight_grad": [],
+        "bias_grad": [],
+        "kernel_grad": [],
+        "bn_gamma_grad": [],
+        "bn_beta_grad": [],
+        "wq_grad": [],
+        "wk_grad": [],
+        "wv_grad": [],
+        "wo_grad": [],
+        "adam_t": 0,
+        "m_weight": [
+          [
+            0.0
+          ],
+          [
+            0.0
+          ],
+          [
+            0.0
+          ],
+          [
+            0.0
+          ],
+          [
+            0.0
+          ],
+          [
+            0.0
+          ],
+          [
+            0.0
+          ],
+          [
+            0.0
+          ]
+        ],
+        "v_weight": [
+          [
+            0.0
+          ],
+          [
+            0.0
+          ],
+          [
+            0.0
+          ],
+          [
+            0.0
+          ],
+          [
+            0.0
+          ],
+          [
+            0.0
+          ],
+          [
+            0.0
+          ],
+          [
+            0.0
+          ]
+        ],
+        "m_bias": [
+          0.0
+        ],
+        "v_bias": [
+          0.0
+        ],
+        "m_kernel": [],
+        "v_kernel": [],
+        "m_bn_gamma": [],
+        "v_bn_gamma": [],
+        "m_bn_beta": [],
+        "v_bn_beta": [],
+        "m_wq": [],
+        "v_wq": [],
+        "m_wk": [],
+        "v_wk": [],
+        "m_wv": [],
+        "v_wv": [],
+        "m_wo": [],
+        "v_wo": [],
+        "rms_weight": [],
+        "rms_bias": []
+      }
+    ],
+    "layer_count": 2,
+    "optimizer": "Adam",
+    "learning_rate": 0.001,
+    "momentum": 0.0,
+    "beta1": 0.9,
+    "beta2": 0.999,
+    "epsilon": 1e-8,
+    "weight_decay": 0.0,
+    "progressive_alpha": 1.0,
+    "current_res_level": 0,
+    "is_training": true
+  }
+}

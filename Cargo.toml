@@ -1,0 +1,28 @@
+[workspace]
+members = ["python_bindings", "c_bindings", "nodejs_bindings"]
+
+[package]
+name = "facaded_gan_cuda"
+version = "0.1.0"
+edition = "2021"
+authors = ["Matthew Abbott"]
+license = "MIT"
+description = "Generative Adversarial Network implementation using cudarc"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
+
+[features]
+default = ["cuda", "opencl"]
+cuda = ["cudarc"]
+opencl = ["ocl"]
+
+[dependencies]
+cudarc = { version = "0.12", features = ["cuda-12060"], optional = true }
+ocl = { version = "0.19", optional = true }
+rand = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[dev-dependencies]
+# Kani is invoked via `cargo kani`, not as a regular dependency
