@@ -757,3 +757,372 @@ func AuditLog(msg, logFile string) {
 	cl := cstr(logFile); defer cfree(cl)
 	C.gf_audit_log(cm, cl)
 }
+
+// ─── Matrix in-place operations ───────────────────────────────────────────────
+
+// MatrixAddInPlace adds b into a element-wise, modifying a in place.
+func MatrixAddInPlace(a, b *Matrix) {
+	C.gf_matrix_add_in_place(a.ptr, b.ptr)
+}
+
+// MatrixScaleInPlace multiplies every element of a by s in place.
+func MatrixScaleInPlace(a *Matrix, s float32) {
+	C.gf_matrix_scale_in_place(a.ptr, C.float(s))
+}
+
+// MatrixClipInPlace clamps every element of a to [lo, hi] in place.
+func MatrixClipInPlace(a *Matrix, lo, hi float32) {
+	C.gf_matrix_clip_in_place(a.ptr, C.float(lo), C.float(hi))
+}
+
+// MatrixSafeSet writes val to element (r, c) of m. No-op if out-of-range.
+func MatrixSafeSet(m *Matrix, r, c int, val float32) {
+	C.gf_matrix_safe_set(m.ptr, C.int(r), C.int(c), C.float(val))
+}
+
+// ActivationBackward computes the gradient of the named activation applied to
+// preAct, scaled by gradOut. act: "relu" | "sigmoid" | "tanh" | "leaky" | "none".
+// Caller owns the returned Matrix.
+func ActivationBackward(gradOut, preAct *Matrix, act string) *Matrix {
+	cs := cstr(act); defer cfree(cs)
+	return newMatrix(C.gf_activation_backward(gradOut.ptr, preAct.ptr, cs))
+}
+
+// ─── Layer ────────────────────────────────────────────────────────────────────
+
+// Layer is an opaque handle to a single network layer.
+// All factory functions register a finalizer so the layer is freed when GC'd.
+// Call Free() for deterministic release.
+type Layer struct{ ptr unsafe.Pointer }
+
+func newLayer(p unsafe.Pointer) *Layer {
+	if p == nil {
+		return nil
+	}
+	l := &Layer{ptr: p}
+	runtime.SetFinalizer(l, (*Layer).Free)
+	return l
+}
+
+// Free releases the underlying C memory immediately.
+// After Free, the Layer must not be used.
+func (l *Layer) Free() {
+	if l.ptr != nil {
+		C.gf_layer_free(l.ptr)
+		l.ptr = nil
+		runtime.SetFinalizer(l, nil)
+	}
+}
+
+// LayerDense creates a fully-connected layer: inSz → outSz with named activation.
+func LayerDense(inSz, outSz int, act string) *Layer {
+	cs := cstr(act); defer cfree(cs)
+	return newLayer(C.gf_layer_dense(C.int(inSz), C.int(outSz), cs))
+}
+
+// LayerConv2D creates a 2-D convolutional layer.
+func LayerConv2D(inCh, outCh, kernelH, kernelW, stride, padding int, act string) *Layer {
+	cs := cstr(act); defer cfree(cs)
+	return newLayer(C.gf_layer_conv2d(
+		C.int(inCh), C.int(outCh),
+		C.int(kernelH), C.int(kernelW),
+		C.int(stride), C.int(padding), cs,
+	))
+}
+
+// LayerDeconv2D creates a 2-D transposed-convolutional (deconv) layer.
+func LayerDeconv2D(inCh, outCh, kernelH, kernelW, stride, padding int, act string) *Layer {
+	cs := cstr(act); defer cfree(cs)
+	return newLayer(C.gf_layer_deconv2d(
+		C.int(inCh), C.int(outCh),
+		C.int(kernelH), C.int(kernelW),
+		C.int(stride), C.int(padding), cs,
+	))
+}
+
+// LayerConv1D creates a 1-D convolutional layer.
+func LayerConv1D(inCh, outCh, kernelSz, stride, padding int, act string) *Layer {
+	cs := cstr(act); defer cfree(cs)
+	return newLayer(C.gf_layer_conv1d(
+		C.int(inCh), C.int(outCh),
+		C.int(kernelSz), C.int(stride), C.int(padding), cs,
+	))
+}
+
+// LayerBatchNorm creates a batch-normalisation layer for the given feature count.
+func LayerBatchNorm(features int) *Layer {
+	return newLayer(C.gf_layer_batch_norm(C.int(features)))
+}
+
+// LayerLayerNorm creates a layer-normalisation layer for the given feature count.
+func LayerLayerNorm(features int) *Layer {
+	return newLayer(C.gf_layer_layer_norm(C.int(features)))
+}
+
+// LayerAttention creates a multi-head self-attention layer.
+func LayerAttention(dModel, nHeads int) *Layer {
+	return newLayer(C.gf_layer_attention(C.int(dModel), C.int(nHeads)))
+}
+
+// Forward runs a forward pass through the layer. Caller owns the returned Matrix.
+func (l *Layer) Forward(inp *Matrix) *Matrix {
+	return newMatrix(C.gf_layer_forward(l.ptr, inp.ptr))
+}
+
+// Backward runs a backward pass through the layer. Caller owns the returned Matrix.
+func (l *Layer) Backward(grad *Matrix) *Matrix {
+	return newMatrix(C.gf_layer_backward(l.ptr, grad.ptr))
+}
+
+// InitOptimizer attaches an optimizer to the layer.
+// opt: "adam" | "sgd" | "rmsprop"
+func (l *Layer) InitOptimizer(opt string) {
+	cs := cstr(opt); defer cfree(cs)
+	C.gf_layer_init_optimizer(l.ptr, cs)
+}
+
+// Conv2D runs the Conv2D forward pass. Caller owns the returned Matrix.
+func (l *Layer) Conv2D(inp *Matrix) *Matrix {
+	return newMatrix(C.gf_layer_conv2d_forward(l.ptr, inp.ptr))
+}
+
+// Conv2DBackward runs the Conv2D backward pass. Caller owns the returned Matrix.
+func (l *Layer) Conv2DBackward(grad *Matrix) *Matrix {
+	return newMatrix(C.gf_layer_conv2d_backward(l.ptr, grad.ptr))
+}
+
+// VerifyWeights sanitises layer weights (replaces NaN/Inf with 0).
+func (l *Layer) VerifyWeights() {
+	C.gf_layer_verify_weights(l.ptr)
+}
+
+// ─── MatrixArray ──────────────────────────────────────────────────────────────
+
+// MatrixArray is a growable array of Matrix pointers managed on the C heap.
+type MatrixArray struct{ ptr unsafe.Pointer }
+
+func newMatrixArray(p unsafe.Pointer) *MatrixArray {
+	if p == nil {
+		return nil
+	}
+	a := &MatrixArray{ptr: p}
+	runtime.SetFinalizer(a, (*MatrixArray).Free)
+	return a
+}
+
+// NewMatrixArray allocates an empty MatrixArray.
+func NewMatrixArray() *MatrixArray {
+	return newMatrixArray(C.gf_matrix_array_create())
+}
+
+// Free releases the underlying C memory immediately.
+// After Free, the MatrixArray must not be used.
+func (a *MatrixArray) Free() {
+	if a.ptr != nil {
+		C.gf_matrix_array_free(a.ptr)
+		a.ptr = nil
+		runtime.SetFinalizer(a, nil)
+	}
+}
+
+// Push appends m to the array (the array does not take ownership of m).
+func (a *MatrixArray) Push(m *Matrix) {
+	C.gf_matrix_array_push(a.ptr, m.ptr)
+}
+
+// Len returns the number of matrices currently stored in the array.
+func (a *MatrixArray) Len() int {
+	return int(C.gf_matrix_array_len(a.ptr))
+}
+
+// ─── Network — extended methods ───────────────────────────────────────────────
+
+// SampleConditional generates count outputs conditioned on cond.
+// noiseType: "gauss" | "uniform" | "analog". Caller owns the returned Matrix.
+func (n *Network) SampleConditional(count, noiseDim, condSz int, noiseType string, cond *Matrix) *Matrix {
+	cs := cstr(noiseType); defer cfree(cs)
+	return newMatrix(C.gf_network_sample_conditional(
+		n.ptr, C.int(count), C.int(noiseDim), C.int(condSz), cs, cond.ptr,
+	))
+}
+
+// AddProgressiveLayer appends a progressive-growing layer at resolution level resLvl.
+func (n *Network) AddProgressiveLayer(resLvl int) {
+	C.gf_network_add_progressive_layer(n.ptr, C.int(resLvl))
+}
+
+// GetLayerOutput returns the cached output of layer idx from the last forward pass.
+// Caller owns the returned Matrix.
+func (n *Network) GetLayerOutput(idx int) *Matrix {
+	return newMatrix(C.gf_network_get_layer_output(n.ptr, C.int(idx)))
+}
+
+// DeepCopy returns an independent copy of the network. Caller owns the result.
+func (n *Network) DeepCopy() *Network {
+	return newNetwork(C.gf_network_deep_copy(n.ptr))
+}
+
+// DiscEvaluate runs the discriminator forward pass and returns scores.
+// Caller owns the returned Matrix.
+func (n *Network) DiscEvaluate(inp *Matrix) *Matrix {
+	return newMatrix(C.gf_disc_evaluate(n.ptr, inp.ptr))
+}
+
+// DiscGradPenalty computes the gradient penalty (e.g. WGAN-GP) between real
+// and fake samples scaled by lambda.
+func (n *Network) DiscGradPenalty(real, fake *Matrix, lambda float32) float32 {
+	return float32(C.gf_disc_grad_penalty(n.ptr, real.ptr, fake.ptr, C.float(lambda)))
+}
+
+// DiscFeatureMatch computes the feature-matching loss between real and fake
+// at layer index featLayer.
+func (n *Network) DiscFeatureMatch(real, fake *Matrix, featLayer int) float32 {
+	return float32(C.gf_disc_feature_match(n.ptr, real.ptr, fake.ptr, C.int(featLayer)))
+}
+
+// DiscAddProgressiveLayer appends a progressive-growing layer to the discriminator
+// at resolution level resLvl.
+func (n *Network) DiscAddProgressiveLayer(resLvl int) {
+	C.gf_disc_add_progressive_layer(n.ptr, C.int(resLvl))
+}
+
+// DiscGetLayerOutput returns the cached output of discriminator layer idx.
+// Caller owns the returned Matrix.
+func (n *Network) DiscGetLayerOutput(idx int) *Matrix {
+	return newMatrix(C.gf_disc_get_layer_output(n.ptr, C.int(idx)))
+}
+
+// DiscDeepCopy returns an independent copy of the discriminator. Caller owns the result.
+func (n *Network) DiscDeepCopy() *Network {
+	return newNetwork(C.gf_disc_deep_copy(n.ptr))
+}
+
+// ─── Training extensions ──────────────────────────────────────────────────────
+
+// TrainOptimize runs one optimizer step for net (applies accumulated gradients).
+func TrainOptimize(net *Network) {
+	C.gf_train_optimize(net.ptr)
+}
+
+// TrainAdamUpdate performs a single Adam parameter update.
+// param, grad, m, v are the parameter matrix, gradient, first-moment, and
+// second-moment accumulators. t is the time-step; lr, beta1, beta2, eps are
+// the standard Adam hyper-parameters.
+func TrainAdamUpdate(param, grad, m, v *Matrix, t int, lr, beta1, beta2, eps float32) {
+	C.gf_train_adam_update(
+		param.ptr, grad.ptr, m.ptr, v.ptr,
+		C.int(t), C.float(lr), C.float(beta1), C.float(beta2), C.float(eps),
+	)
+}
+
+// TrainSGDUpdate performs a single SGD (with momentum) parameter update.
+func TrainSGDUpdate(param, grad, velocity *Matrix, lr, momentum float32) {
+	C.gf_train_sgd_update(param.ptr, grad.ptr, velocity.ptr, C.float(lr), C.float(momentum))
+}
+
+// TrainRMSPropUpdate performs a single RMSProp parameter update.
+func TrainRMSPropUpdate(param, grad, cache *Matrix, lr, decay, eps float32) {
+	C.gf_train_rmsprop_update(param.ptr, grad.ptr, cache.ptr, C.float(lr), C.float(decay), C.float(eps))
+}
+
+// TrainLabelSmoothing returns a new Matrix with label values clamped to [lo, hi].
+// Caller owns the returned Matrix.
+func TrainLabelSmoothing(labels *Matrix, lo, hi float32) *Matrix {
+	return newMatrix(C.gf_train_label_smoothing(labels.ptr, C.float(lo), C.float(hi)))
+}
+
+// TrainLoadBMP loads a BMP image file into a Dataset. Caller owns the result.
+func TrainLoadBMP(path string) *Dataset {
+	cs := cstr(path); defer cfree(cs)
+	return newDataset(C.gf_train_load_bmp(cs))
+}
+
+// TrainLoadWAV loads a WAV audio file into a Dataset. Caller owns the result.
+func TrainLoadWAV(path string) *Dataset {
+	cs := cstr(path); defer cfree(cs)
+	return newDataset(C.gf_train_load_wav(cs))
+}
+
+// TrainAugment applies random augmentation to sample.
+// dataType: "vector" | "image" | "audio". Caller owns the returned Matrix.
+func TrainAugment(sample *Matrix, dataType string) *Matrix {
+	cs := cstr(dataType); defer cfree(cs)
+	return newMatrix(C.gf_train_augment(sample.ptr, cs))
+}
+
+// TrainLogMetrics appends the metrics in m to filename as a CSV row.
+func TrainLogMetrics(m *Metrics, filename string) {
+	cs := cstr(filename); defer cfree(cs)
+	C.gf_train_log_metrics(m.ptr, cs)
+}
+
+// TrainSaveSamples generates and saves sample images produced by gen at epoch ep.
+func TrainSaveSamples(gen *Network, ep int, dir string, noiseDim int, noiseType string) {
+	cd := cstr(dir); defer cfree(cd)
+	cn := cstr(noiseType); defer cfree(cn)
+	C.gf_train_save_samples(gen.ptr, C.int(ep), cd, C.int(noiseDim), cn)
+}
+
+// TrainPlotCSV writes a two-column (dLoss, gLoss) CSV of length cnt to filename.
+func TrainPlotCSV(filename string, dLoss, gLoss []float32, cnt int) {
+	cs := cstr(filename); defer cfree(cs)
+	C.gf_train_plot_csv(
+		cs,
+		(*C.float)(unsafe.Pointer(&dLoss[0])),
+		(*C.float)(unsafe.Pointer(&gLoss[0])),
+		C.int(cnt),
+	)
+}
+
+// TrainPrintBar prints a single-line ASCII progress bar for the current epoch.
+func TrainPrintBar(dLoss, gLoss float32, width int) {
+	C.gf_train_print_bar(C.float(dLoss), C.float(gLoss), C.int(width))
+}
+
+// TrainComputeFID computes the Fréchet Inception Distance between two sets of
+// real and fake samples.
+func TrainComputeFID(realArr, fakeArr *MatrixArray) float32 {
+	return float32(C.gf_train_compute_fid(realArr.ptr, fakeArr.ptr))
+}
+
+// TrainComputeIS computes the Inception Score for a set of generated samples.
+func TrainComputeIS(samples *MatrixArray) float32 {
+	return float32(C.gf_train_compute_is(samples.ptr))
+}
+
+// ─── Security extensions ──────────────────────────────────────────────────────
+
+// SecGetOSRandom returns a single cryptographically-random byte from the OS RNG.
+func SecGetOSRandom() uint8 {
+	return uint8(C.gf_sec_get_os_random())
+}
+
+// SecEncryptModel encrypts the model file at inF with key and writes the result
+// to outF.
+func SecEncryptModel(inF, outF, key string) {
+	ci := cstr(inF); defer cfree(ci)
+	co := cstr(outF); defer cfree(co)
+	ck := cstr(key); defer cfree(ck)
+	C.gf_sec_encrypt_model(ci, co, ck)
+}
+
+// SecDecryptModel decrypts the model file at inF with key and writes the result
+// to outF.
+func SecDecryptModel(inF, outF, key string) {
+	ci := cstr(inF); defer cfree(ci)
+	co := cstr(outF); defer cfree(co)
+	ck := cstr(key); defer cfree(ck)
+	C.gf_sec_decrypt_model(ci, co, ck)
+}
+
+// SecRunTests runs the built-in security self-tests and returns the number of
+// failures (0 = all passed).
+func SecRunTests() int {
+	return int(C.gf_sec_run_tests())
+}
+
+// SecRunFuzzTests runs the security fuzz tests for the given number of
+// iterations and returns the number of failures found.
+func SecRunFuzzTests(iterations int) int {
+	return int(C.gf_sec_run_fuzz_tests(C.int(iterations)))
+}

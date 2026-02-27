@@ -680,3 +680,293 @@ pub fn validatePath(path: [:0]const u8) bool {
 pub fn auditLog(msg: [:0]const u8, log_file: [:0]const u8) void {
     gf_audit_log(msg.ptr, log_file.ptr);
 }
+
+// ── Additional C extern declarations ──────────────────────────────────────────
+
+const RawLayer       = opaque {};
+const RawMatrixArray = opaque {};
+
+// Matrix in-place
+extern fn gf_matrix_add_in_place(a: *RawMatrix, b: *const RawMatrix) void;
+extern fn gf_matrix_scale_in_place(a: *RawMatrix, s: f32) void;
+extern fn gf_matrix_clip_in_place(a: *RawMatrix, lo: f32, hi: f32) void;
+extern fn gf_matrix_safe_set(m: *RawMatrix, r: c_int, c: c_int, val: f32) void;
+extern fn gf_activation_backward(grad_out: *const RawMatrix, pre_act: *const RawMatrix, act: [*:0]const u8) ?*RawMatrix;
+// Generator extensions
+extern fn gf_gen_sample_conditional(gen: *RawNetwork, count: c_int, noise_dim: c_int, cond_sz: c_int, noise_type: [*:0]const u8, cond: *const RawMatrix) ?*RawMatrix;
+extern fn gf_gen_add_progressive_layer(gen: *RawNetwork, res_lvl: c_int) void;
+extern fn gf_gen_get_layer_output(gen: *const RawNetwork, idx: c_int) ?*RawMatrix;
+extern fn gf_gen_deep_copy(gen: *const RawNetwork) ?*RawNetwork;
+// Discriminator extensions
+extern fn gf_disc_evaluate(disc: *RawNetwork, inp: *const RawMatrix) ?*RawMatrix;
+extern fn gf_disc_grad_penalty(disc: *RawNetwork, real: *const RawMatrix, fake: *const RawMatrix, lambda: f32) f32;
+extern fn gf_disc_feature_match(disc: *RawNetwork, real: *const RawMatrix, fake: *const RawMatrix, feat_layer: c_int) f32;
+extern fn gf_disc_minibatch_std_dev(inp: *const RawMatrix) ?*RawMatrix;
+extern fn gf_disc_add_progressive_layer(disc: *RawNetwork, res_lvl: c_int) void;
+extern fn gf_disc_get_layer_output(disc: *const RawNetwork, idx: c_int) ?*RawMatrix;
+extern fn gf_disc_deep_copy(disc: *const RawNetwork) ?*RawNetwork;
+// Training extensions
+extern fn gf_train_optimize(net: *RawNetwork) void;
+extern fn gf_train_adam_update(p: *RawMatrix, g: *const RawMatrix, m_buf: *RawMatrix, v_buf: *RawMatrix, t: c_int, lr: f32, b1: f32, b2: f32, eps: f32, wd: f32) void;
+extern fn gf_train_sgd_update(p: *RawMatrix, g: *const RawMatrix, lr: f32, wd: f32) void;
+extern fn gf_train_rmsprop_update(p: *RawMatrix, g: *const RawMatrix, cache: *RawMatrix, lr: f32, decay: f32, eps: f32, wd: f32) void;
+extern fn gf_train_label_smoothing(labels: *const RawMatrix, lo: f32, hi: f32) ?*RawMatrix;
+extern fn gf_train_load_bmp(path: [*:0]const u8) ?*RawDataset;
+extern fn gf_train_load_wav(path: [*:0]const u8) ?*RawDataset;
+extern fn gf_train_augment(sample: *const RawMatrix, data_type: [*:0]const u8) ?*RawMatrix;
+extern fn gf_train_log_metrics(m: *const RawMetrics, filename: [*:0]const u8) void;
+extern fn gf_train_save_samples(gen: *RawNetwork, ep: c_int, dir: [*:0]const u8, noise_dim: c_int, noise_type: [*:0]const u8) void;
+extern fn gf_train_plot_csv(filename: [*:0]const u8, d_loss: [*]const f32, g_loss: [*]const f32, cnt: c_int) void;
+extern fn gf_train_print_bar(d_loss: f32, g_loss: f32, width: c_int) void;
+extern fn gf_train_compute_fid(real_arr: *const RawMatrixArray, fake_arr: *const RawMatrixArray) f32;
+extern fn gf_train_compute_is(samples: *const RawMatrixArray) f32;
+// Security extensions
+extern fn gf_sec_get_os_random() u8;
+extern fn gf_sec_encrypt_model(in_f: [*:0]const u8, out_f: [*:0]const u8, key: [*:0]const u8) void;
+extern fn gf_sec_decrypt_model(in_f: [*:0]const u8, out_f: [*:0]const u8, key: [*:0]const u8) void;
+extern fn gf_sec_run_tests() c_int;
+extern fn gf_sec_run_fuzz_tests(iterations: c_int) c_int;
+// Layer API
+extern fn gf_layer_free(layer: *RawLayer) void;
+extern fn gf_layer_create_dense(in_sz: c_int, out_sz: c_int, act: [*:0]const u8) ?*RawLayer;
+extern fn gf_layer_create_conv2d(in_ch: c_int, out_ch: c_int, k_sz: c_int, stride: c_int, pad: c_int, w: c_int, h: c_int, act: [*:0]const u8) ?*RawLayer;
+extern fn gf_layer_create_deconv2d(in_ch: c_int, out_ch: c_int, k_sz: c_int, stride: c_int, pad: c_int, w: c_int, h: c_int, act: [*:0]const u8) ?*RawLayer;
+extern fn gf_layer_create_conv1d(in_ch: c_int, out_ch: c_int, k_sz: c_int, stride: c_int, pad: c_int, in_len: c_int, act: [*:0]const u8) ?*RawLayer;
+extern fn gf_layer_create_batch_norm(features: c_int) ?*RawLayer;
+extern fn gf_layer_create_layer_norm(features: c_int) ?*RawLayer;
+extern fn gf_layer_create_attention(d_model: c_int, n_heads: c_int) ?*RawLayer;
+extern fn gf_layer_forward(layer: *RawLayer, inp: *const RawMatrix) ?*RawMatrix;
+extern fn gf_layer_backward(layer: *RawLayer, grad: *const RawMatrix) ?*RawMatrix;
+extern fn gf_layer_init_optimizer(layer: *RawLayer, opt: [*:0]const u8) void;
+extern fn gf_layer_conv2d(inp: *const RawMatrix, layer: *RawLayer) ?*RawMatrix;
+extern fn gf_layer_conv2d_backward(layer: *RawLayer, grad: *const RawMatrix) ?*RawMatrix;
+extern fn gf_layer_deconv2d(inp: *const RawMatrix, layer: *RawLayer) ?*RawMatrix;
+extern fn gf_layer_deconv2d_backward(layer: *RawLayer, grad: *const RawMatrix) ?*RawMatrix;
+extern fn gf_layer_conv1d(inp: *const RawMatrix, layer: *RawLayer) ?*RawMatrix;
+extern fn gf_layer_conv1d_backward(layer: *RawLayer, grad: *const RawMatrix) ?*RawMatrix;
+extern fn gf_layer_batch_norm(inp: *const RawMatrix, layer: *RawLayer) ?*RawMatrix;
+extern fn gf_layer_batch_norm_backward(layer: *RawLayer, grad: *const RawMatrix) ?*RawMatrix;
+extern fn gf_layer_layer_norm(inp: *const RawMatrix, layer: *RawLayer) ?*RawMatrix;
+extern fn gf_layer_layer_norm_backward(layer: *RawLayer, grad: *const RawMatrix) ?*RawMatrix;
+extern fn gf_layer_spectral_norm(layer: *RawLayer) ?*RawMatrix;
+extern fn gf_layer_attention(inp: *const RawMatrix, layer: *RawLayer) ?*RawMatrix;
+extern fn gf_layer_attention_backward(layer: *RawLayer, grad: *const RawMatrix) ?*RawMatrix;
+extern fn gf_layer_verify_weights(layer: *RawLayer) void;
+// MatrixArray API
+extern fn gf_matrix_array_create() ?*RawMatrixArray;
+extern fn gf_matrix_array_free(arr: *RawMatrixArray) void;
+extern fn gf_matrix_array_push(arr: *RawMatrixArray, m: *const RawMatrix) void;
+extern fn gf_matrix_array_len(arr: *const RawMatrixArray) c_int;
+
+// ── Matrix extensions ─────────────────────────────────────────────────────────
+// (extend the existing Matrix struct via stand-alone functions)
+
+/// Add b into a element-wise in place.
+pub fn matrixAddInPlace(a: Matrix, b: Matrix) void {
+    gf_matrix_add_in_place(a.ptr, b.ptr);
+}
+/// Scale all elements of a by s in place.
+pub fn matrixScaleInPlace(a: Matrix, s: f32) void {
+    gf_matrix_scale_in_place(a.ptr, s);
+}
+/// Clip all elements of a to [lo, hi] in place.
+pub fn matrixClipInPlace(a: Matrix, lo: f32, hi: f32) void {
+    gf_matrix_clip_in_place(a.ptr, lo, hi);
+}
+/// Write val at (r, c); no-op if out of bounds.
+pub fn matrixSafeSet(m: Matrix, r: c_int, col: c_int, val: f32) void {
+    gf_matrix_safe_set(m.ptr, r, col, val);
+}
+/// Activation backward pass.  act: "relu"|"sigmoid"|"tanh"|"leaky"|"none".
+pub fn activationBackward(grad_out: Matrix, pre_act: Matrix, act: [:0]const u8) Error!Matrix {
+    return Matrix{ .ptr = gf_activation_backward(grad_out.ptr, pre_act.ptr, act.ptr) orelse return error.AllocationFailed };
+}
+
+// ── Network extensions ────────────────────────────────────────────────────────
+
+/// Conditional generator sample.  cond is the conditioning matrix.
+pub fn genSampleConditional(gen: Network, count: c_int, noise_dim: c_int, cond_sz: c_int, noise_type: [:0]const u8, cond: Matrix) Error!Matrix {
+    return Matrix{ .ptr = gf_gen_sample_conditional(gen.ptr, count, noise_dim, cond_sz, noise_type.ptr, cond.ptr) orelse return error.AllocationFailed };
+}
+pub fn genAddProgressiveLayer(gen: Network, res_lvl: c_int) void {
+    gf_gen_add_progressive_layer(gen.ptr, res_lvl);
+}
+pub fn genGetLayerOutput(gen: Network, idx: c_int) Error!Matrix {
+    return Matrix{ .ptr = gf_gen_get_layer_output(gen.ptr, idx) orelse return error.AllocationFailed };
+}
+pub fn genDeepCopy(gen: Network) Error!Network {
+    return Network{ .ptr = gf_gen_deep_copy(gen.ptr) orelse return error.AllocationFailed };
+}
+pub fn discEvaluate(disc: Network, inp: Matrix) Error!Matrix {
+    return Matrix{ .ptr = gf_disc_evaluate(disc.ptr, inp.ptr) orelse return error.AllocationFailed };
+}
+pub fn discGradPenalty(disc: Network, real: Matrix, fake: Matrix, lambda: f32) f32 {
+    return gf_disc_grad_penalty(disc.ptr, real.ptr, fake.ptr, lambda);
+}
+pub fn discFeatureMatch(disc: Network, real: Matrix, fake: Matrix, feat_layer: c_int) f32 {
+    return gf_disc_feature_match(disc.ptr, real.ptr, fake.ptr, feat_layer);
+}
+pub fn discMinibatchStdDev(inp: Matrix) Error!Matrix {
+    return Matrix{ .ptr = gf_disc_minibatch_std_dev(inp.ptr) orelse return error.AllocationFailed };
+}
+pub fn discAddProgressiveLayer(disc: Network, res_lvl: c_int) void {
+    gf_disc_add_progressive_layer(disc.ptr, res_lvl);
+}
+pub fn discGetLayerOutput(disc: Network, idx: c_int) Error!Matrix {
+    return Matrix{ .ptr = gf_disc_get_layer_output(disc.ptr, idx) orelse return error.AllocationFailed };
+}
+pub fn discDeepCopy(disc: Network) Error!Network {
+    return Network{ .ptr = gf_disc_deep_copy(disc.ptr) orelse return error.AllocationFailed };
+}
+
+// ── Training extensions ───────────────────────────────────────────────────────
+
+pub fn trainOptimize(net: Network) void { gf_train_optimize(net.ptr); }
+pub fn trainAdamUpdate(p: Matrix, g: Matrix, m_buf: Matrix, v_buf: Matrix, t: c_int, lr: f32, b1: f32, b2: f32, eps: f32, wd: f32) void {
+    gf_train_adam_update(p.ptr, g.ptr, m_buf.ptr, v_buf.ptr, t, lr, b1, b2, eps, wd);
+}
+pub fn trainSGDUpdate(p: Matrix, g: Matrix, lr: f32, wd: f32) void {
+    gf_train_sgd_update(p.ptr, g.ptr, lr, wd);
+}
+pub fn trainRMSPropUpdate(p: Matrix, g: Matrix, cache: Matrix, lr: f32, decay: f32, eps: f32, wd: f32) void {
+    gf_train_rmsprop_update(p.ptr, g.ptr, cache.ptr, lr, decay, eps, wd);
+}
+pub fn trainLabelSmoothing(labels: Matrix, lo: f32, hi: f32) Error!Matrix {
+    return Matrix{ .ptr = gf_train_label_smoothing(labels.ptr, lo, hi) orelse return error.AllocationFailed };
+}
+pub fn trainLoadBMP(path: [:0]const u8) Error!Dataset {
+    return Dataset{ .ptr = gf_train_load_bmp(path.ptr) orelse return error.AllocationFailed };
+}
+pub fn trainLoadWAV(path: [:0]const u8) Error!Dataset {
+    return Dataset{ .ptr = gf_train_load_wav(path.ptr) orelse return error.AllocationFailed };
+}
+pub fn trainAugment(sample: Matrix, data_type: [:0]const u8) Error!Matrix {
+    return Matrix{ .ptr = gf_train_augment(sample.ptr, data_type.ptr) orelse return error.AllocationFailed };
+}
+pub fn trainLogMetrics(m: Metrics, filename: [:0]const u8) void {
+    gf_train_log_metrics(m.ptr, filename.ptr);
+}
+pub fn trainSaveSamples(gen: Network, ep: c_int, dir: [:0]const u8, noise_dim: c_int, noise_type: [:0]const u8) void {
+    gf_train_save_samples(gen.ptr, ep, dir.ptr, noise_dim, noise_type.ptr);
+}
+pub fn trainPrintBar(d_loss: f32, g_loss: f32, width: c_int) void {
+    gf_train_print_bar(d_loss, g_loss, width);
+}
+
+// ── Security extensions ───────────────────────────────────────────────────────
+
+pub fn secGetOSRandom() u8 { return gf_sec_get_os_random(); }
+pub fn secEncryptModel(in_f: [:0]const u8, out_f: [:0]const u8, key: [:0]const u8) void {
+    gf_sec_encrypt_model(in_f.ptr, out_f.ptr, key.ptr);
+}
+pub fn secDecryptModel(in_f: [:0]const u8, out_f: [:0]const u8, key: [:0]const u8) void {
+    gf_sec_decrypt_model(in_f.ptr, out_f.ptr, key.ptr);
+}
+pub fn secRunTests() bool { return gf_sec_run_tests() != 0; }
+pub fn secRunFuzzTests(iterations: c_int) bool { return gf_sec_run_fuzz_tests(iterations) != 0; }
+
+// ── Layer ─────────────────────────────────────────────────────────────────────
+
+pub const Layer = struct {
+    ptr: *RawLayer,
+
+    pub fn deinit(self: Layer) void { gf_layer_free(self.ptr); }
+
+    // Factories
+    pub fn dense(in_sz: c_int, out_sz: c_int, act: [:0]const u8) Error!Layer {
+        return Layer{ .ptr = gf_layer_create_dense(in_sz, out_sz, act.ptr) orelse return error.AllocationFailed };
+    }
+    pub fn conv2d(in_ch: c_int, out_ch: c_int, k: c_int, s: c_int, pad: c_int, w: c_int, h: c_int, act: [:0]const u8) Error!Layer {
+        return Layer{ .ptr = gf_layer_create_conv2d(in_ch, out_ch, k, s, pad, w, h, act.ptr) orelse return error.AllocationFailed };
+    }
+    pub fn deconv2d(in_ch: c_int, out_ch: c_int, k: c_int, s: c_int, pad: c_int, w: c_int, h: c_int, act: [:0]const u8) Error!Layer {
+        return Layer{ .ptr = gf_layer_create_deconv2d(in_ch, out_ch, k, s, pad, w, h, act.ptr) orelse return error.AllocationFailed };
+    }
+    pub fn conv1d(in_ch: c_int, out_ch: c_int, k: c_int, s: c_int, pad: c_int, in_len: c_int, act: [:0]const u8) Error!Layer {
+        return Layer{ .ptr = gf_layer_create_conv1d(in_ch, out_ch, k, s, pad, in_len, act.ptr) orelse return error.AllocationFailed };
+    }
+    pub fn batchNorm(features: c_int) Error!Layer {
+        return Layer{ .ptr = gf_layer_create_batch_norm(features) orelse return error.AllocationFailed };
+    }
+    pub fn layerNorm(features: c_int) Error!Layer {
+        return Layer{ .ptr = gf_layer_create_layer_norm(features) orelse return error.AllocationFailed };
+    }
+    pub fn attention(d_model: c_int, n_heads: c_int) Error!Layer {
+        return Layer{ .ptr = gf_layer_create_attention(d_model, n_heads) orelse return error.AllocationFailed };
+    }
+
+    // Dispatch
+    pub fn forward(self: Layer, inp: Matrix) Error!Matrix {
+        return Matrix{ .ptr = gf_layer_forward(self.ptr, inp.ptr) orelse return error.AllocationFailed };
+    }
+    pub fn backward(self: Layer, grad: Matrix) Error!Matrix {
+        return Matrix{ .ptr = gf_layer_backward(self.ptr, grad.ptr) orelse return error.AllocationFailed };
+    }
+    pub fn initOptimizer(self: Layer, opt: [:0]const u8) void {
+        gf_layer_init_optimizer(self.ptr, opt.ptr);
+    }
+
+    // Specific ops
+    pub fn conv2dFwd(self: Layer, inp: Matrix) Error!Matrix {
+        return Matrix{ .ptr = gf_layer_conv2d(inp.ptr, self.ptr) orelse return error.AllocationFailed };
+    }
+    pub fn conv2dBwd(self: Layer, grad: Matrix) Error!Matrix {
+        return Matrix{ .ptr = gf_layer_conv2d_backward(self.ptr, grad.ptr) orelse return error.AllocationFailed };
+    }
+    pub fn deconv2dFwd(self: Layer, inp: Matrix) Error!Matrix {
+        return Matrix{ .ptr = gf_layer_deconv2d(inp.ptr, self.ptr) orelse return error.AllocationFailed };
+    }
+    pub fn deconv2dBwd(self: Layer, grad: Matrix) Error!Matrix {
+        return Matrix{ .ptr = gf_layer_deconv2d_backward(self.ptr, grad.ptr) orelse return error.AllocationFailed };
+    }
+    pub fn conv1dFwd(self: Layer, inp: Matrix) Error!Matrix {
+        return Matrix{ .ptr = gf_layer_conv1d(inp.ptr, self.ptr) orelse return error.AllocationFailed };
+    }
+    pub fn conv1dBwd(self: Layer, grad: Matrix) Error!Matrix {
+        return Matrix{ .ptr = gf_layer_conv1d_backward(self.ptr, grad.ptr) orelse return error.AllocationFailed };
+    }
+    pub fn batchNormFwd(self: Layer, inp: Matrix) Error!Matrix {
+        return Matrix{ .ptr = gf_layer_batch_norm(inp.ptr, self.ptr) orelse return error.AllocationFailed };
+    }
+    pub fn batchNormBwd(self: Layer, grad: Matrix) Error!Matrix {
+        return Matrix{ .ptr = gf_layer_batch_norm_backward(self.ptr, grad.ptr) orelse return error.AllocationFailed };
+    }
+    pub fn layerNormFwd(self: Layer, inp: Matrix) Error!Matrix {
+        return Matrix{ .ptr = gf_layer_layer_norm(inp.ptr, self.ptr) orelse return error.AllocationFailed };
+    }
+    pub fn layerNormBwd(self: Layer, grad: Matrix) Error!Matrix {
+        return Matrix{ .ptr = gf_layer_layer_norm_backward(self.ptr, grad.ptr) orelse return error.AllocationFailed };
+    }
+    pub fn spectralNorm(self: Layer) Error!Matrix {
+        return Matrix{ .ptr = gf_layer_spectral_norm(self.ptr) orelse return error.AllocationFailed };
+    }
+    pub fn attentionFwd(self: Layer, inp: Matrix) Error!Matrix {
+        return Matrix{ .ptr = gf_layer_attention(inp.ptr, self.ptr) orelse return error.AllocationFailed };
+    }
+    pub fn attentionBwd(self: Layer, grad: Matrix) Error!Matrix {
+        return Matrix{ .ptr = gf_layer_attention_backward(self.ptr, grad.ptr) orelse return error.AllocationFailed };
+    }
+    pub fn verifyWeights(self: Layer) void { gf_layer_verify_weights(self.ptr); }
+};
+
+// ── MatrixArray ───────────────────────────────────────────────────────────────
+
+pub const MatrixArray = struct {
+    ptr: *RawMatrixArray,
+
+    pub fn create() Error!MatrixArray {
+        return MatrixArray{ .ptr = gf_matrix_array_create() orelse return error.AllocationFailed };
+    }
+    pub fn deinit(self: MatrixArray) void { gf_matrix_array_free(self.ptr); }
+    pub fn push(self: MatrixArray, m: Matrix) void { gf_matrix_array_push(self.ptr, m.ptr); }
+    pub fn len(self: MatrixArray) c_int { return gf_matrix_array_len(self.ptr); }
+};
+
+// ── FID / IS ──────────────────────────────────────────────────────────────────
+
+pub fn computeFID(real_arr: MatrixArray, fake_arr: MatrixArray) f32 {
+    return gf_train_compute_fid(real_arr.ptr, fake_arr.ptr);
+}
+pub fn computeIS(samples: MatrixArray) f32 {
+    return gf_train_compute_is(samples.ptr);
+}

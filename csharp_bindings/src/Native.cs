@@ -208,4 +208,84 @@ internal static class Native
     [DllImport(Lib, CharSet = CharSet.Ansi)] internal static extern void   gf_init_backend(string name);
     [DllImport(Lib)]                         internal static extern IntPtr gf_detect_backend();  // static string
     [DllImport(Lib)]                         internal static extern void   gf_secure_randomize();
+
+    // ─── Matrix in-place & additional ops ─────────────────────────────────────
+    [DllImport(Lib)] internal static extern void   gf_matrix_add_in_place(IntPtr a, IntPtr b);
+    [DllImport(Lib)] internal static extern void   gf_matrix_scale_in_place(IntPtr a, float s);
+    [DllImport(Lib)] internal static extern void   gf_matrix_clip_in_place(IntPtr a, float lo, float hi);
+    [DllImport(Lib)] internal static extern void   gf_matrix_safe_set(IntPtr m, int r, int c, float val);
+    [DllImport(Lib, CharSet = CharSet.Ansi)]
+    internal static extern IntPtr gf_activation_backward(IntPtr gradOut, IntPtr preAct, string act);
+
+    // ─── Generator extensions ─────────────────────────────────────────────────
+    [DllImport(Lib, CharSet = CharSet.Ansi)]
+    internal static extern IntPtr gf_gen_sample_conditional(IntPtr gen, int count, int noiseDim, int condSz, string noiseType, IntPtr cond);
+    [DllImport(Lib)] internal static extern void   gf_gen_add_progressive_layer(IntPtr gen, int resLvl);
+    [DllImport(Lib)] internal static extern IntPtr gf_gen_get_layer_output(IntPtr gen, int idx);
+    [DllImport(Lib)] internal static extern IntPtr gf_gen_deep_copy(IntPtr gen);
+
+    // ─── Discriminator extensions ─────────────────────────────────────────────
+    [DllImport(Lib)] internal static extern IntPtr gf_disc_evaluate(IntPtr disc, IntPtr inp);
+    [DllImport(Lib)] internal static extern float  gf_disc_grad_penalty(IntPtr disc, IntPtr real_, IntPtr fake, float lambda);
+    [DllImport(Lib)] internal static extern float  gf_disc_feature_match(IntPtr disc, IntPtr real_, IntPtr fake, int featLayer);
+    [DllImport(Lib)] internal static extern IntPtr gf_disc_minibatch_std_dev(IntPtr inp);
+    [DllImport(Lib)] internal static extern void   gf_disc_add_progressive_layer(IntPtr disc, int resLvl);
+    [DllImport(Lib)] internal static extern IntPtr gf_disc_get_layer_output(IntPtr disc, int idx);
+    [DllImport(Lib)] internal static extern IntPtr gf_disc_deep_copy(IntPtr disc);
+
+    // ─── Training extensions ──────────────────────────────────────────────────
+    [DllImport(Lib)] internal static extern void gf_train_optimize(IntPtr net);
+    [DllImport(Lib)] internal static extern void gf_train_adam_update(IntPtr p, IntPtr g, IntPtr mBuf, IntPtr vBuf, int t, float lr, float b1, float b2, float eps, float wd);
+    [DllImport(Lib)] internal static extern void gf_train_sgd_update(IntPtr p, IntPtr g, float lr, float wd);
+    [DllImport(Lib)] internal static extern void gf_train_rmsprop_update(IntPtr p, IntPtr g, IntPtr cache, float lr, float decay, float eps, float wd);
+    [DllImport(Lib)] internal static extern IntPtr gf_train_label_smoothing(IntPtr labels, float lo, float hi);
+    [DllImport(Lib, CharSet = CharSet.Ansi)] internal static extern IntPtr gf_train_load_bmp(string path);
+    [DllImport(Lib, CharSet = CharSet.Ansi)] internal static extern IntPtr gf_train_load_wav(string path);
+    [DllImport(Lib, CharSet = CharSet.Ansi)] internal static extern IntPtr gf_train_augment(IntPtr sample, string dataType);
+    [DllImport(Lib, CharSet = CharSet.Ansi)] internal static extern void   gf_train_log_metrics(IntPtr m, string filename);
+    [DllImport(Lib, CharSet = CharSet.Ansi)] internal static extern void   gf_train_save_samples(IntPtr gen, int ep, string dir, int noiseDim, string noiseType);
+    [DllImport(Lib, CharSet = CharSet.Ansi)] internal static extern void   gf_train_plot_csv(string filename, [In] float[] dLoss, [In] float[] gLoss, int cnt);
+    [DllImport(Lib)] internal static extern void  gf_train_print_bar(float dLoss, float gLoss, int width);
+    [DllImport(Lib)] internal static extern float gf_train_compute_fid(IntPtr realArr, IntPtr fakeArr);
+    [DllImport(Lib)] internal static extern float gf_train_compute_is(IntPtr samples);
+
+    // ─── Security extensions ──────────────────────────────────────────────────
+    [DllImport(Lib)] internal static extern byte gf_sec_get_os_random();
+    [DllImport(Lib, CharSet = CharSet.Ansi)] internal static extern void gf_sec_encrypt_model(string inF, string outF, string key);
+    [DllImport(Lib, CharSet = CharSet.Ansi)] internal static extern void gf_sec_decrypt_model(string inF, string outF, string key);
+    [DllImport(Lib)] internal static extern int  gf_sec_run_tests();
+    [DllImport(Lib)] internal static extern int  gf_sec_run_fuzz_tests(int iterations);
+
+    // ─── Layer API ────────────────────────────────────────────────────────────
+    [DllImport(Lib)] internal static extern void   gf_layer_free(IntPtr layer);
+    [DllImport(Lib, CharSet = CharSet.Ansi)] internal static extern IntPtr gf_layer_create_dense(int inSz, int outSz, string act);
+    [DllImport(Lib, CharSet = CharSet.Ansi)] internal static extern IntPtr gf_layer_create_conv2d(int inCh, int outCh, int kSz, int stride, int pad, int w, int h, string act);
+    [DllImport(Lib, CharSet = CharSet.Ansi)] internal static extern IntPtr gf_layer_create_deconv2d(int inCh, int outCh, int kSz, int stride, int pad, int w, int h, string act);
+    [DllImport(Lib, CharSet = CharSet.Ansi)] internal static extern IntPtr gf_layer_create_conv1d(int inCh, int outCh, int kSz, int stride, int pad, int inLen, string act);
+    [DllImport(Lib)] internal static extern IntPtr gf_layer_create_batch_norm(int features);
+    [DllImport(Lib)] internal static extern IntPtr gf_layer_create_layer_norm(int features);
+    [DllImport(Lib)] internal static extern IntPtr gf_layer_create_attention(int dModel, int nHeads);
+    [DllImport(Lib)] internal static extern IntPtr gf_layer_forward(IntPtr layer, IntPtr inp);
+    [DllImport(Lib)] internal static extern IntPtr gf_layer_backward(IntPtr layer, IntPtr grad);
+    [DllImport(Lib, CharSet = CharSet.Ansi)] internal static extern void gf_layer_init_optimizer(IntPtr layer, string opt);
+    [DllImport(Lib)] internal static extern IntPtr gf_layer_conv2d(IntPtr inp, IntPtr layer);
+    [DllImport(Lib)] internal static extern IntPtr gf_layer_conv2d_backward(IntPtr layer, IntPtr grad);
+    [DllImport(Lib)] internal static extern IntPtr gf_layer_deconv2d(IntPtr inp, IntPtr layer);
+    [DllImport(Lib)] internal static extern IntPtr gf_layer_deconv2d_backward(IntPtr layer, IntPtr grad);
+    [DllImport(Lib)] internal static extern IntPtr gf_layer_conv1d(IntPtr inp, IntPtr layer);
+    [DllImport(Lib)] internal static extern IntPtr gf_layer_conv1d_backward(IntPtr layer, IntPtr grad);
+    [DllImport(Lib)] internal static extern IntPtr gf_layer_batch_norm(IntPtr inp, IntPtr layer);
+    [DllImport(Lib)] internal static extern IntPtr gf_layer_batch_norm_backward(IntPtr layer, IntPtr grad);
+    [DllImport(Lib)] internal static extern IntPtr gf_layer_layer_norm(IntPtr inp, IntPtr layer);
+    [DllImport(Lib)] internal static extern IntPtr gf_layer_layer_norm_backward(IntPtr layer, IntPtr grad);
+    [DllImport(Lib)] internal static extern IntPtr gf_layer_spectral_norm(IntPtr layer);
+    [DllImport(Lib)] internal static extern IntPtr gf_layer_attention(IntPtr inp, IntPtr layer);
+    [DllImport(Lib)] internal static extern IntPtr gf_layer_attention_backward(IntPtr layer, IntPtr grad);
+    [DllImport(Lib)] internal static extern void   gf_layer_verify_weights(IntPtr layer);
+
+    // ─── MatrixArray API ──────────────────────────────────────────────────────
+    [DllImport(Lib)] internal static extern IntPtr gf_matrix_array_create();
+    [DllImport(Lib)] internal static extern void   gf_matrix_array_free(IntPtr arr);
+    [DllImport(Lib)] internal static extern void   gf_matrix_array_push(IntPtr arr, IntPtr m);
+    [DllImport(Lib)] internal static extern int    gf_matrix_array_len(IntPtr arr);
 }

@@ -801,3 +801,530 @@ pub fn bounds_check(m: &Matrix, r: i32, c: i32) -> bool {
 pub fn secure_randomize() {
     facade::gf_sec_secure_randomize();
 }
+
+// ─── Matrix in-place operations ───────────────────────────────────────────────
+
+/// Add matrix b into a in place (a += b).
+#[napi]
+pub fn matrix_add_in_place(a: &mut Matrix, b: &Matrix) {
+    facade::gf_op_matrix_add_in_place(&mut a.inner, &b.inner);
+}
+
+/// Scale matrix a in place (a *= s).
+#[napi]
+pub fn matrix_scale_in_place(a: &mut Matrix, s: f64) {
+    facade::gf_op_matrix_scale_in_place(&mut a.inner, s as f32);
+}
+
+/// Clip all elements of a in place to [lo, hi].
+#[napi]
+pub fn matrix_clip_in_place(a: &mut Matrix, lo: f64, hi: f64) {
+    facade::gf_op_matrix_clip_in_place(&mut a.inner, lo as f32, hi as f32);
+}
+
+/// Safe element write (no-op on out-of-range).
+#[napi]
+pub fn matrix_safe_set(m: &mut Matrix, r: i32, c: i32, val: f64) {
+    facade::gf_op_safe_set(&mut m.inner, r, c, val as f32);
+}
+
+/// Compute the activation backward pass.
+/// act: "relu" | "sigmoid" | "tanh" | "leaky" | "none".
+#[napi]
+pub fn activation_backward(grad_out: &Matrix, pre_act: &Matrix, act: String) -> Matrix {
+    Matrix {
+        inner: facade::gf_op_activation_backward(
+            &grad_out.inner,
+            &pre_act.inner,
+            parse_activation(&act),
+        ),
+    }
+}
+
+// ─── Additional GanNetwork methods ────────────────────────────────────────────
+
+#[napi]
+impl GanNetwork {
+    /// Sample count outputs with a conditioning matrix.
+    /// noise_type: "gauss" | "uniform" | "analog".
+    #[napi]
+    pub fn sample_conditional(
+        &mut self,
+        count: i32,
+        noise_dim: i32,
+        cond_sz: i32,
+        noise_type: String,
+        cond: &Matrix,
+    ) -> Matrix {
+        Matrix {
+            inner: facade::gf_gen_sample_conditional(
+                &mut self.inner,
+                count,
+                noise_dim,
+                cond_sz,
+                parse_noise_type(&noise_type),
+                &cond.inner,
+            ),
+        }
+    }
+
+    /// Add a progressive growing layer at the given resolution level.
+    #[napi]
+    pub fn gen_add_progressive_layer(&mut self, res_lvl: i32) {
+        facade::gf_gen_add_progressive_layer(&mut self.inner, res_lvl);
+    }
+
+    /// Get the cached output of layer at index idx.
+    #[napi]
+    pub fn gen_get_layer_output(&self, idx: i32) -> Matrix {
+        Matrix { inner: facade::gf_gen_get_layer_output(&self.inner, idx) }
+    }
+
+    /// Return a deep copy of this network (generator variant).
+    #[napi]
+    pub fn gen_deep_copy(&self) -> GanNetwork {
+        GanNetwork { inner: facade::gf_gen_deep_copy(&self.inner) }
+    }
+
+    /// Evaluate the discriminator on inp (alias for forward).
+    #[napi]
+    pub fn disc_evaluate(&mut self, inp: &Matrix) -> Matrix {
+        Matrix { inner: facade::gf_disc_evaluate(&mut self.inner, &inp.inner) }
+    }
+
+    /// Compute the gradient penalty (WGAN-GP) between real and fake batches.
+    #[napi]
+    pub fn disc_grad_penalty(&mut self, real: &Matrix, fake: &Matrix, lambda: f64) -> f64 {
+        facade::gf_disc_grad_penalty(&mut self.inner, &real.inner, &fake.inner, lambda as f32) as f64
+    }
+
+    /// Compute feature-matching loss between real and fake batches at feat_layer.
+    #[napi]
+    pub fn disc_feature_match(&mut self, real: &Matrix, fake: &Matrix, feat_layer: i32) -> f64 {
+        facade::gf_disc_feature_match(&mut self.inner, &real.inner, &fake.inner, feat_layer) as f64
+    }
+
+    /// Add a progressive growing layer at the given resolution level (discriminator variant).
+    #[napi]
+    pub fn disc_add_progressive_layer(&mut self, res_lvl: i32) {
+        facade::gf_disc_add_progressive_layer(&mut self.inner, res_lvl);
+    }
+
+    /// Get the cached output of discriminator layer at index idx.
+    #[napi]
+    pub fn disc_get_layer_output(&self, idx: i32) -> Matrix {
+        Matrix { inner: facade::gf_disc_get_layer_output(&self.inner, idx) }
+    }
+
+    /// Return a deep copy of this network (discriminator variant).
+    #[napi]
+    pub fn disc_deep_copy(&self) -> GanNetwork {
+        GanNetwork { inner: facade::gf_disc_deep_copy(&self.inner) }
+    }
+}
+
+// ─── Minibatch std dev (top-level) ────────────────────────────────────────────
+
+/// Append a minibatch standard deviation feature column to inp.
+#[napi]
+pub fn disc_minibatch_std_dev(inp: &Matrix) -> Matrix {
+    Matrix { inner: facade::gf_disc_minibatch_std_dev(&inp.inner) }
+}
+
+// ─── Training utility functions ───────────────────────────────────────────────
+
+/// Apply accumulated gradients to all layers of net (alias for update_weights).
+#[napi]
+pub fn train_optimize(net: &mut GanNetwork) {
+    facade::gf_train_optimize(&mut net.inner);
+}
+
+/// Adam parameter update in place.
+#[napi]
+pub fn train_adam_update(
+    p: &mut Matrix,
+    g: &Matrix,
+    m_buf: &mut Matrix,
+    v_buf: &mut Matrix,
+    t: i32,
+    lr: f64,
+    b1: f64,
+    b2: f64,
+    eps: f64,
+    wd: f64,
+) {
+    facade::gf_train_adam_update(
+        &mut p.inner,
+        &g.inner,
+        &mut m_buf.inner,
+        &mut v_buf.inner,
+        t,
+        lr as f32,
+        b1 as f32,
+        b2 as f32,
+        eps as f32,
+        wd as f32,
+    );
+}
+
+/// SGD parameter update in place.
+#[napi]
+pub fn train_sgd_update(p: &mut Matrix, g: &Matrix, lr: f64, wd: f64) {
+    facade::gf_train_sgd_update(&mut p.inner, &g.inner, lr as f32, wd as f32);
+}
+
+/// RMSProp parameter update in place.
+#[napi]
+pub fn train_rmsprop_update(
+    p: &mut Matrix,
+    g: &Matrix,
+    cache: &mut Matrix,
+    lr: f64,
+    decay: f64,
+    eps: f64,
+    wd: f64,
+) {
+    facade::gf_train_rmsprop_update(
+        &mut p.inner,
+        &g.inner,
+        &mut cache.inner,
+        lr as f32,
+        decay as f32,
+        eps as f32,
+        wd as f32,
+    );
+}
+
+/// Apply label smoothing to a labels matrix, clamping values into [lo, hi].
+#[napi]
+pub fn train_label_smoothing(labels: &Matrix, lo: f64, hi: f64) -> Matrix {
+    Matrix { inner: facade::gf_train_label_smoothing(&labels.inner, lo as f32, hi as f32) }
+}
+
+/// Load a BMP image dataset from path.
+#[napi]
+pub fn train_load_bmp(path: String) -> GanDataset {
+    GanDataset { inner: facade::gf_train_load_bmp(&path) }
+}
+
+/// Load a WAV audio dataset from path.
+#[napi]
+pub fn train_load_wav(path: String) -> GanDataset {
+    GanDataset { inner: facade::gf_train_load_wav(&path) }
+}
+
+/// Apply data augmentation to sample. data_type: "vector" | "image" | "audio".
+#[napi]
+pub fn train_augment(sample: &Matrix, data_type: String) -> Matrix {
+    Matrix { inner: facade::gf_train_augment(&sample.inner, parse_data_type(&data_type)) }
+}
+
+/// Append training metrics to a CSV log file.
+#[napi]
+pub fn train_log_metrics(m: &GanMetrics, filename: String) {
+    facade::gf_train_log_metrics(&m.inner, &filename);
+}
+
+/// Save generated samples from gen at epoch ep to dir.
+/// noise_type: "gauss" | "uniform" | "analog".
+#[napi]
+pub fn train_save_samples(
+    gen: &mut GanNetwork,
+    ep: i32,
+    dir: String,
+    noise_dim: i32,
+    noise_type: String,
+) {
+    facade::gf_train_save_samples(&mut gen.inner, ep, &dir, noise_dim, parse_noise_type(&noise_type));
+}
+
+/// Write discriminator and generator loss curves to a CSV file.
+#[napi]
+pub fn train_plot_csv(filename: String, d_loss: Vec<f64>, g_loss: Vec<f64>) {
+    let d: Vec<f32> = d_loss.iter().map(|&v| v as f32).collect();
+    let g: Vec<f32> = g_loss.iter().map(|&v| v as f32).collect();
+    let cnt = d.len().min(g.len()) as i32;
+    facade::gf_train_plot_csv(&filename, &d, &g, cnt);
+}
+
+/// Print an ASCII loss bar to stdout.
+#[napi]
+pub fn train_print_bar(d_loss: f64, g_loss: f64, width: i32) {
+    facade::gf_train_print_bar(d_loss as f32, g_loss as f32, width);
+}
+
+/// Compute the Fréchet Inception Distance between real and fake sample arrays.
+#[napi]
+pub fn train_compute_fid(real_arr: &GanMatrixArray, fake_arr: &GanMatrixArray) -> f64 {
+    facade::gf_train_compute_fid(&real_arr.inner, &fake_arr.inner) as f64
+}
+
+/// Compute the Inception Score of a sample array.
+#[napi]
+pub fn train_compute_is(samples: &GanMatrixArray) -> f64 {
+    facade::gf_train_compute_is(&samples.inner) as f64
+}
+
+// ─── Security functions ────────────────────────────────────────────────────────
+
+/// Return one cryptographically random byte from the OS.
+#[napi]
+pub fn sec_get_os_random() -> i32 {
+    facade::gf_sec_get_os_random() as i32
+}
+
+/// Encrypt a model file at in_f, writing ciphertext to out_f using key.
+#[napi]
+pub fn sec_encrypt_model(in_f: String, out_f: String, key: String) {
+    facade::gf_sec_encrypt_model(&in_f, &out_f, &key);
+}
+
+/// Decrypt a model file at in_f, writing plaintext to out_f using key.
+#[napi]
+pub fn sec_decrypt_model(in_f: String, out_f: String, key: String) {
+    facade::gf_sec_decrypt_model(&in_f, &out_f, &key);
+}
+
+/// Run the built-in security self-tests. Returns 0 on success, 1 on failure.
+#[napi]
+pub fn sec_run_tests() -> i32 {
+    if facade::gf_sec_run_tests() { 0 } else { 1 }
+}
+
+/// Run fuzz tests for iterations iterations. Returns 0 on success, 1 on failure.
+#[napi]
+pub fn sec_run_fuzz_tests(iterations: i32) -> i32 {
+    if facade::gf_sec_run_fuzz_tests(iterations) { 0 } else { 1 }
+}
+
+// ─── GanLayer ─────────────────────────────────────────────────────────────────
+
+/// A single network layer (dense, conv, norm, attention, etc.).
+/// Obtain via the factory functions below.
+#[napi]
+pub struct GanLayer {
+    inner: facaded_gan_cuda::types::Layer,
+}
+
+#[napi]
+impl GanLayer {
+    // ── Factory constructors ─────────────────────────────────────────────────
+
+    /// Create a dense (fully-connected) layer.
+    /// act: "relu" | "sigmoid" | "tanh" | "leaky" | "none".
+    #[napi(factory)]
+    pub fn create_dense(in_sz: i32, out_sz: i32, act: String) -> Self {
+        Self { inner: facade::gf_op_create_dense_layer(in_sz, out_sz, parse_activation(&act)) }
+    }
+
+    /// Create a Conv2D layer.
+    #[napi(factory)]
+    pub fn create_conv2d(
+        in_ch: i32,
+        out_ch: i32,
+        k_sz: i32,
+        stride: i32,
+        pad: i32,
+        w: i32,
+        h: i32,
+        act: String,
+    ) -> Self {
+        Self {
+            inner: facade::gf_op_create_conv2d_layer(
+                in_ch, out_ch, k_sz, stride, pad, w, h,
+                parse_activation(&act),
+            ),
+        }
+    }
+
+    /// Create a Deconv2D (transposed convolution) layer.
+    #[napi(factory)]
+    pub fn create_deconv2d(
+        in_ch: i32,
+        out_ch: i32,
+        k_sz: i32,
+        stride: i32,
+        pad: i32,
+        w: i32,
+        h: i32,
+        act: String,
+    ) -> Self {
+        Self {
+            inner: facade::gf_op_create_deconv2d_layer(
+                in_ch, out_ch, k_sz, stride, pad, w, h,
+                parse_activation(&act),
+            ),
+        }
+    }
+
+    /// Create a Conv1D layer.
+    #[napi(factory)]
+    pub fn create_conv1d(
+        in_ch: i32,
+        out_ch: i32,
+        k_sz: i32,
+        stride: i32,
+        pad: i32,
+        in_len: i32,
+        act: String,
+    ) -> Self {
+        Self {
+            inner: facade::gf_op_create_conv1d_layer(
+                in_ch, out_ch, k_sz, stride, pad, in_len,
+                parse_activation(&act),
+            ),
+        }
+    }
+
+    /// Create a batch-normalisation layer.
+    #[napi(factory)]
+    pub fn create_batch_norm(features: i32) -> Self {
+        Self { inner: facade::gf_op_create_batch_norm_layer(features) }
+    }
+
+    /// Create a layer-normalisation layer.
+    #[napi(factory)]
+    pub fn create_layer_norm(features: i32) -> Self {
+        Self { inner: facade::gf_op_create_layer_norm_layer(features) }
+    }
+
+    /// Create a self-attention layer.
+    #[napi(factory)]
+    pub fn create_attention(d_model: i32, n_heads: i32) -> Self {
+        Self { inner: facade::gf_op_create_attention_layer(d_model, n_heads) }
+    }
+
+    // ── Methods ──────────────────────────────────────────────────────────────
+
+    /// Run a forward pass through this layer.
+    #[napi]
+    pub fn forward(&mut self, inp: &Matrix) -> Matrix {
+        Matrix { inner: facade::gf_op_layer_forward(&mut self.inner, &inp.inner) }
+    }
+
+    /// Run a backward pass through this layer.
+    #[napi]
+    pub fn backward(&mut self, grad_out: &Matrix) -> Matrix {
+        Matrix { inner: facade::gf_op_layer_backward(&mut self.inner, &grad_out.inner) }
+    }
+
+    /// Initialise the optimizer state for this layer.
+    /// opt: "adam" | "sgd" | "rmsprop".
+    #[napi]
+    pub fn init_optimizer(&mut self, opt: String) {
+        facade::gf_op_init_layer_optimizer(&mut self.inner, parse_optimizer(&opt));
+    }
+
+    /// Run Conv2D forward pass.
+    #[napi]
+    pub fn conv2d(&mut self, inp: &Matrix) -> Matrix {
+        Matrix { inner: facade::gf_op_conv2d(&inp.inner, &mut self.inner) }
+    }
+
+    /// Run Conv2D backward pass.
+    #[napi]
+    pub fn conv2d_backward(&mut self, grad_out: &Matrix) -> Matrix {
+        Matrix { inner: facade::gf_op_conv2d_backward(&mut self.inner, &grad_out.inner) }
+    }
+
+    /// Run Deconv2D forward pass.
+    #[napi]
+    pub fn deconv2d(&mut self, inp: &Matrix) -> Matrix {
+        Matrix { inner: facade::gf_op_deconv2d(&inp.inner, &mut self.inner) }
+    }
+
+    /// Run Deconv2D backward pass.
+    #[napi]
+    pub fn deconv2d_backward(&mut self, grad_out: &Matrix) -> Matrix {
+        Matrix { inner: facade::gf_op_deconv2d_backward(&mut self.inner, &grad_out.inner) }
+    }
+
+    /// Run Conv1D forward pass.
+    #[napi]
+    pub fn conv1d(&mut self, inp: &Matrix) -> Matrix {
+        Matrix { inner: facade::gf_op_conv1d(&inp.inner, &mut self.inner) }
+    }
+
+    /// Run Conv1D backward pass.
+    #[napi]
+    pub fn conv1d_backward(&mut self, grad_out: &Matrix) -> Matrix {
+        Matrix { inner: facade::gf_op_conv1d_backward(&mut self.inner, &grad_out.inner) }
+    }
+
+    /// Run batch-normalisation forward pass.
+    #[napi]
+    pub fn batch_norm(&mut self, inp: &Matrix) -> Matrix {
+        Matrix { inner: facade::gf_op_batch_norm(&inp.inner, &mut self.inner) }
+    }
+
+    /// Run batch-normalisation backward pass.
+    #[napi]
+    pub fn batch_norm_backward(&mut self, grad_out: &Matrix) -> Matrix {
+        Matrix { inner: facade::gf_op_batch_norm_backward(&mut self.inner, &grad_out.inner) }
+    }
+
+    /// Run layer-normalisation forward pass.
+    #[napi]
+    pub fn layer_norm(&mut self, inp: &Matrix) -> Matrix {
+        Matrix { inner: facade::gf_op_layer_norm(&inp.inner, &mut self.inner) }
+    }
+
+    /// Run layer-normalisation backward pass.
+    #[napi]
+    pub fn layer_norm_backward(&mut self, grad_out: &Matrix) -> Matrix {
+        Matrix { inner: facade::gf_op_layer_norm_backward(&mut self.inner, &grad_out.inner) }
+    }
+
+    /// Apply spectral normalisation and return the normalised weight matrix.
+    #[napi]
+    pub fn spectral_norm(&mut self) -> Matrix {
+        Matrix { inner: facade::gf_op_spectral_norm(&mut self.inner) }
+    }
+
+    /// Run self-attention forward pass.
+    #[napi]
+    pub fn attention(&mut self, inp: &Matrix) -> Matrix {
+        Matrix { inner: facade::gf_op_attention(&inp.inner, &mut self.inner) }
+    }
+
+    /// Run self-attention backward pass.
+    #[napi]
+    pub fn attention_backward(&mut self, grad_out: &Matrix) -> Matrix {
+        Matrix { inner: facade::gf_op_attention_backward(&mut self.inner, &grad_out.inner) }
+    }
+
+    /// Sanitise weights (replace NaN/Inf with 0).
+    #[napi]
+    pub fn verify_weights(&mut self) {
+        facade::gf_sec_verify_weights(&mut self.inner);
+    }
+}
+
+// ─── GanMatrixArray ───────────────────────────────────────────────────────────
+
+/// A growable array of Matrix objects, used for FID/IS computation.
+#[napi]
+pub struct GanMatrixArray {
+    inner: facaded_gan_cuda::types::TMatrixArray,
+}
+
+#[napi]
+impl GanMatrixArray {
+    /// Create an empty matrix array.
+    #[napi(constructor)]
+    pub fn new() -> Self {
+        Self { inner: Vec::new() }
+    }
+
+    /// Append a matrix to the array.
+    #[napi]
+    pub fn push(&mut self, m: &Matrix) {
+        self.inner.push(m.inner.clone());
+    }
+
+    /// Return the number of matrices in the array.
+    #[napi]
+    pub fn len(&self) -> i32 {
+        self.inner.len() as i32
+    }
+}

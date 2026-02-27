@@ -930,6 +930,263 @@ cargo run --no-default-features -- --epochs 2 --batch-size 8
 
 ---
 
+## **Facade API Reference**
+
+The facade module (`src/facade.rs`) exposes 119 `gf_*` functions organized into five groups. In Rust, import with `use facaded_gan_cuda::facade::*;`. In Python, access via `from facaded_gan import facade`. The CLI `--help` flag prints this reference at runtime.
+
+All functions in this table are available in every language wrapper (C, C++, Node.js, Go, Julia, C#, Zig).
+
+### Types
+
+| Type | Alias | C opaque handle |
+|------|-------|-----------------|
+| `TMatrix` | `Vec<Vec<f32>>` | `GanMatrix*` |
+| `TVector` | `Vec<f32>` | `GanVector*` |
+| `TMatrixArray` | `Vec<TMatrix>` | `GanMatrixArray*` |
+| `TLayer` | `Layer` struct | `GanLayer*` |
+| `TNetwork` | `Network` struct | `GanNetwork*` |
+| `TGANConfig` | `GANConfig` struct | `GanConfig*` |
+| `TGANMetrics` | `GANMetrics` struct | `GanMetrics*` |
+| `TDataset` | `Dataset` struct | `GanDataset*` |
+
+### Enums
+
+| Enum | Variants |
+|------|----------|
+| `ActivationType` | `ReLU`, `Sigmoid`, `Tanh`, `LeakyReLU`, `None` |
+| `LayerType` | `Dense`, `Conv2D`, `Deconv2D`, `Conv1D`, `BatchNorm`, `LayerNorm`, `SpectralNorm`, `Attention` |
+| `LossType` | `BCE`, `WGANGP`, `Hinge`, `LeastSquares` |
+| `DataType` | `Image`, `Audio`, `Vector` |
+| `NoiseType` | `Gauss`, `Uniform`, `Analog` |
+| `Optimizer` | `Adam`, `SGD`, `RMSProp` |
+
+### GF_Op — Low-Level Operations
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `gf_op_create_matrix(rows, cols)` | `TMatrix` | Zero-filled matrix |
+| `gf_op_create_vector(size)` | `TVector` | Zero-filled vector |
+| `gf_op_matrix_multiply(a, b)` | `TMatrix` | A × B |
+| `gf_op_matrix_add(a, b)` | `TMatrix` | Element-wise add |
+| `gf_op_matrix_subtract(a, b)` | `TMatrix` | Element-wise subtract |
+| `gf_op_matrix_scale(a, s)` | `TMatrix` | Scalar multiply |
+| `gf_op_matrix_transpose(a)` | `TMatrix` | Transpose |
+| `gf_op_matrix_normalize(a)` | `TMatrix` | L2-normalise each row |
+| `gf_op_matrix_element_mul(a, b)` | `TMatrix` | Hadamard product |
+| `gf_op_matrix_add_in_place(a, b)` | `()` | In-place add |
+| `gf_op_matrix_scale_in_place(a, s)` | `()` | In-place scalar multiply |
+| `gf_op_matrix_clip_in_place(a, lo, hi)` | `()` | In-place clamp |
+| `gf_op_safe_get(m, r, c, default)` | `f32` | Bounds-safe element read |
+| `gf_op_safe_set(m, r, c, val)` | `()` | Bounds-safe element write |
+| `gf_op_relu(a)` | `TMatrix` | ReLU activation |
+| `gf_op_leaky_relu(a, alpha)` | `TMatrix` | Leaky ReLU |
+| `gf_op_sigmoid(a)` | `TMatrix` | Sigmoid |
+| `gf_op_tanh(a)` | `TMatrix` | Tanh |
+| `gf_op_softmax(a)` | `TMatrix` | Softmax |
+| `gf_op_activate(a, act)` | `TMatrix` | Dispatch by `ActivationType` |
+| `gf_op_activation_backward(grad, pre_act, act)` | `TMatrix` | Activation gradient |
+| `gf_op_conv2d(inp, layer)` | `TMatrix` | 2-D convolution forward |
+| `gf_op_conv2d_backward(layer, grad)` | `TMatrix` | 2-D convolution backward |
+| `gf_op_deconv2d(inp, layer)` | `TMatrix` | Transposed conv forward |
+| `gf_op_deconv2d_backward(layer, grad)` | `TMatrix` | Transposed conv backward |
+| `gf_op_conv1d(inp, layer)` | `TMatrix` | 1-D convolution forward |
+| `gf_op_conv1d_backward(layer, grad)` | `TMatrix` | 1-D convolution backward |
+| `gf_op_batch_norm(inp, layer)` | `TMatrix` | Batch normalisation forward |
+| `gf_op_batch_norm_backward(layer, grad)` | `TMatrix` | Batch normalisation backward |
+| `gf_op_layer_norm(inp, layer)` | `TMatrix` | Layer normalisation forward |
+| `gf_op_layer_norm_backward(layer, grad)` | `TMatrix` | Layer normalisation backward |
+| `gf_op_spectral_norm(layer)` | `TMatrix` | Spectral norm of weight matrix |
+| `gf_op_attention(inp, layer)` | `TMatrix` | Multi-head self-attention forward |
+| `gf_op_attention_backward(layer, grad)` | `TMatrix` | Attention backward |
+| `gf_op_create_dense_layer(in, out, act)` | `TLayer` | Dense layer factory |
+| `gf_op_create_conv2d_layer(iCh,oCh,k,s,p,w,h,act)` | `TLayer` | Conv2D layer factory |
+| `gf_op_create_deconv2d_layer(iCh,oCh,k,s,p,w,h,act)` | `TLayer` | Transposed conv factory |
+| `gf_op_create_conv1d_layer(iCh,oCh,k,s,p,len,act)` | `TLayer` | Conv1D layer factory |
+| `gf_op_create_batch_norm_layer(features)` | `TLayer` | BatchNorm layer factory |
+| `gf_op_create_layer_norm_layer(features)` | `TLayer` | LayerNorm layer factory |
+| `gf_op_create_attention_layer(d_model, n_heads)` | `TLayer` | Attention layer factory |
+| `gf_op_layer_forward(layer, inp)` | `TMatrix` | Dispatch layer forward pass |
+| `gf_op_layer_backward(layer, grad)` | `TMatrix` | Dispatch layer backward pass |
+| `gf_op_init_layer_optimizer(layer, opt)` | `()` | Initialise layer optimizer state |
+| `gf_op_random_gaussian()` | `f32` | Standard normal sample |
+| `gf_op_random_uniform(lo, hi)` | `f32` | Uniform sample in [lo, hi] |
+| `gf_op_generate_noise(m, size, depth, nt)` | `()` | Fill matrix with noise (in-place) |
+| `gf_op_noise_slerp(v1, v2, t)` | `TVector` | Spherical interpolation |
+
+### GF_Gen — Generator Actions
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `gf_gen_build(sizes, act, opt, lr)` | `Network` | Dense generator from layer widths |
+| `gf_gen_build_conv(noise_dim, cond_sz, base_ch, act, opt, lr)` | `Network` | Convolutional generator |
+| `gf_gen_forward(gen, inp)` | `TMatrix` | Forward pass |
+| `gf_gen_backward(gen, grad)` | `TMatrix` | Backward pass |
+| `gf_gen_sample(gen, count, noise_dim, nt)` | `TMatrix` | Generate `count` samples |
+| `gf_gen_sample_conditional(gen, count, noise_dim, cond_sz, nt, cond)` | `TMatrix` | Conditional generation |
+| `gf_gen_update_weights(gen)` | `()` | Apply accumulated gradients |
+| `gf_gen_add_progressive_layer(gen, lvl)` | `()` | Grow network by one resolution level |
+| `gf_gen_get_layer_output(gen, idx)` | `TMatrix` | Intermediate layer activations |
+| `gf_gen_set_training(gen, bool)` | `()` | Toggle train / inference mode |
+| `gf_gen_noise(size, depth, nt)` | `TMatrix` | Convenience noise matrix |
+| `gf_gen_noise_slerp(v1, v2, t)` | `TVector` | Latent-space interpolation |
+| `gf_gen_deep_copy(gen)` | `Network` | Full weight clone |
+
+### GF_Disc — Discriminator Actions
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `gf_disc_build(sizes, act, opt, lr)` | `Network` | Dense discriminator |
+| `gf_disc_build_conv(in_ch, in_w, in_h, cond_sz, base_ch, act, opt, lr)` | `Network` | Convolutional discriminator |
+| `gf_disc_evaluate(disc, inp)` | `TMatrix` | Inference-mode forward pass |
+| `gf_disc_forward(disc, inp)` | `TMatrix` | Training-mode forward pass |
+| `gf_disc_backward(disc, grad)` | `TMatrix` | Backward pass |
+| `gf_disc_update_weights(disc)` | `()` | Apply gradients |
+| `gf_disc_grad_penalty(disc, real, fake, lambda)` | `f32` | Gradient penalty (WGAN-GP) |
+| `gf_disc_feature_match(disc, real, fake, feat_layer)` | `f32` | Feature-matching loss |
+| `gf_disc_minibatch_std_dev(inp)` | `TMatrix` | Append minibatch std dev feature |
+| `gf_disc_add_progressive_layer(disc, lvl)` | `()` | Grow by one resolution level |
+| `gf_disc_get_layer_output(disc, idx)` | `TMatrix` | Intermediate activations |
+| `gf_disc_set_training(disc, bool)` | `()` | Toggle train / inference mode |
+| `gf_disc_deep_copy(disc)` | `Network` | Full weight clone |
+
+### GF_Train — Training Control
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `gf_train_full(gen, disc, ds, cfg)` | `GANMetrics` | Full training loop |
+| `gf_train_step(gen, disc, batch, noise, cfg)` | `GANMetrics` | Single D+G update |
+| `gf_train_optimize(net)` | `()` | Apply optimizer step |
+| `gf_train_adam_update(p, g, m, v, t, lr, b1, b2, e, wd)` | `()` | Manual Adam step |
+| `gf_train_sgd_update(p, g, lr, wd)` | `()` | Manual SGD step |
+| `gf_train_rmsprop_update(p, g, cache, lr, decay, e, wd)` | `()` | Manual RMSProp step |
+| `gf_train_cosine_anneal(ep, max_ep, base_lr, min_lr)` | `f32` | Cosine annealing schedule |
+| `gf_train_bce_loss(pred, target)` | `f32` | Binary cross-entropy |
+| `gf_train_bce_grad(pred, target)` | `TMatrix` | BCE gradient |
+| `gf_train_wgan_disc_loss(d_real, d_fake)` | `f32` | WGAN discriminator loss |
+| `gf_train_wgan_gen_loss(d_fake)` | `f32` | WGAN generator loss |
+| `gf_train_hinge_disc_loss(d_real, d_fake)` | `f32` | Hinge discriminator loss |
+| `gf_train_hinge_gen_loss(d_fake)` | `f32` | Hinge generator loss |
+| `gf_train_ls_disc_loss(d_real, d_fake)` | `f32` | Least-squares discriminator loss |
+| `gf_train_ls_gen_loss(d_fake)` | `f32` | Least-squares generator loss |
+| `gf_train_label_smoothing(labels, lo, hi)` | `TMatrix` | Soft label remapping |
+| `gf_train_load_dataset(path, dt)` | `Dataset` | Load dataset from file |
+| `gf_train_load_bmp(path)` | `Dataset` | Load BMP image dataset |
+| `gf_train_load_wav(path)` | `Dataset` | Load WAV audio dataset |
+| `gf_train_create_synthetic(count, features)` | `Dataset` | Random synthetic dataset |
+| `gf_train_augment(sample, dt)` | `TMatrix` | Data augmentation |
+| `gf_train_compute_fid(real_s, fake_s)` | `f32` | Fréchet Inception Distance |
+| `gf_train_compute_is(samples)` | `f32` | Inception Score |
+| `gf_train_log_metrics(metrics, filename)` | `()` | Append metrics to CSV |
+| `gf_train_save_model(net, filename)` | `()` | Binary weight save |
+| `gf_train_load_model(net, filename)` | `()` | Binary weight load |
+| `gf_train_save_json(gen, disc, filename)` | `()` | JSON weight save |
+| `gf_train_load_json(gen, disc, filename)` | `()` | JSON weight load |
+| `gf_train_save_checkpoint(gen, disc, ep, dir)` | `()` | Epoch checkpoint save |
+| `gf_train_load_checkpoint(gen, disc, ep, dir)` | `()` | Epoch checkpoint restore |
+| `gf_train_save_samples(gen, ep, dir, noise_dim, nt)` | `()` | Save generated samples to disk |
+| `gf_train_plot_csv(filename, d_loss, g_loss, cnt)` | `()` | Write loss curves to CSV |
+| `gf_train_print_bar(d_loss, g_loss, width)` | `()` | ASCII progress bar |
+
+### GF_Sec — Security & Entropy
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `gf_sec_audit_log(msg, log_file)` | `()` | ISO-8601 timestamped append-only log [NIST AU-2/AU-3] |
+| `gf_sec_secure_randomize()` | `()` | Seed RNG from `/dev/urandom` |
+| `gf_sec_get_os_random()` | `u8` | Single byte from `/dev/urandom` |
+| `gf_sec_validate_path(path)` | `bool` | Reject paths with traversal components |
+| `gf_sec_verify_weights(layer)` | `()` | Replace NaN/Inf in one layer |
+| `gf_sec_verify_network(net)` | `()` | Replace NaN/Inf across all layers |
+| `gf_sec_encrypt_model(in, out, key)` | `()` | XOR-stream model encryption [NIST SC-28] |
+| `gf_sec_decrypt_model(in, out, key)` | `()` | XOR-stream model decryption [NIST SC-28] |
+| `gf_sec_bounds_check(m, r, c)` | `bool` | Verify (r,c) is in-bounds for matrix |
+| `gf_sec_run_tests()` | `bool` | Built-in unit test suite [NIST SA-11] |
+| `gf_sec_run_fuzz_tests(iterations)` | `bool` | Fuzz test suite [NIST SA-11] |
+
+### GF_Layer — Layer Handle API
+
+Individual layers can be created, operated on, and freed independently of a full Network.
+The `GanLayer*` opaque handle wraps any layer type (dense, conv, norm, attention).
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `gf_layer_create_dense(in, out, act)` | `GanLayer*` | Dense (fully-connected) layer |
+| `gf_layer_create_conv2d(iCh,oCh,k,s,p,w,h,act)` | `GanLayer*` | Conv2D layer |
+| `gf_layer_create_deconv2d(...)` | `GanLayer*` | Transposed Conv2D layer |
+| `gf_layer_create_conv1d(iCh,oCh,k,s,p,len,act)` | `GanLayer*` | Conv1D layer |
+| `gf_layer_create_batch_norm(features)` | `GanLayer*` | BatchNorm layer |
+| `gf_layer_create_layer_norm(features)` | `GanLayer*` | LayerNorm layer |
+| `gf_layer_create_attention(dModel, nHeads)` | `GanLayer*` | Multi-head self-attention |
+| `gf_layer_free(layer*)` | `()` | Free a GanLayer |
+| `gf_layer_forward(layer*, inp*)` | `Matrix*` | Dispatch forward through any layer type |
+| `gf_layer_backward(layer*, grad*)` | `Matrix*` | Dispatch backward through any layer type |
+| `gf_layer_init_optimizer(layer*, opt)` | `()` | Initialise per-layer optimizer |
+| `gf_layer_conv2d / conv2d_backward` | `Matrix*` | Conv2D fwd/bwd |
+| `gf_layer_deconv2d / deconv2d_backward` | `Matrix*` | Transposed Conv2D fwd/bwd |
+| `gf_layer_conv1d / conv1d_backward` | `Matrix*` | Conv1D fwd/bwd |
+| `gf_layer_batch_norm / batch_norm_backward` | `Matrix*` | BatchNorm fwd/bwd |
+| `gf_layer_layer_norm / layer_norm_backward` | `Matrix*` | LayerNorm fwd/bwd |
+| `gf_layer_spectral_norm(layer*)` | `Matrix*` | Spectral normalization |
+| `gf_layer_attention / attention_backward` | `Matrix*` | Self-attention fwd/bwd |
+| `gf_layer_verify_weights(layer*)` | `()` | Replace NaN/Inf in layer weights |
+
+### GF_MatrixArray — FID / IS Sample Container
+
+A growable array of matrices used to collect real and fake samples for FID and IS metrics.
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `gf_matrix_array_create()` | `GanMatrixArray*` | Create an empty array |
+| `gf_matrix_array_free(arr*)` | `()` | Free the array and its contents |
+| `gf_matrix_array_push(arr*, m*)` | `()` | Append a copy of matrix m |
+| `gf_matrix_array_len(arr*)` | `int` | Number of matrices in the array |
+
+### GF_Run — Top-Level Entry Point
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `gf_run(config)` | `GANResult` | Build networks, load data, train, save — full pipeline |
+
+### Facade Usage Examples
+
+**Rust (direct)**
+```rust
+use facaded_gan_cuda::facade::*;
+use facaded_gan_cuda::types::*;
+
+// Low-level ops
+let a = gf_op_create_matrix(4, 4);
+let b = gf_op_matrix_transpose(&a);
+let c = gf_op_matrix_multiply(&a, &b);
+
+// Build and train manually
+let mut gen  = gf_gen_build(&[64, 128, 1], ActivationType::LeakyReLU, Optimizer::Adam, 0.0002);
+let mut disc = gf_disc_build(&[1, 128, 1], ActivationType::LeakyReLU, Optimizer::Adam, 0.0002);
+let ds       = gf_train_create_synthetic(1000, 1);
+let cfg      = GANConfig { epochs: 10, batch_size: 32, ..Default::default() };
+let metrics  = gf_train_full(&mut gen, &mut disc, &ds, &cfg);
+println!("g_loss: {:.4}", metrics.g_loss);
+```
+
+**Python (facade submodule)**
+```python
+from facaded_gan import facade
+
+# Low-level ops
+a = facade.gf_op_create_matrix(4, 4)
+b = facade.gf_op_matrix_transpose(a)
+
+# Build generator / discriminator
+gen  = facade.gf_gen_build([64, 128, 1], "leaky", "adam", 0.0002)
+disc = facade.gf_disc_build([1, 128, 1], "leaky", "adam", 0.0002)
+
+# Security
+ok = facade.gf_sec_validate_path("/tmp/model.bin")
+facade.gf_sec_audit_log("Training started", "/tmp/gan.log")
+```
+
+---
+
 ## **Formal Verification with Kani**
 
 ### Overview

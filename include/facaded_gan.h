@@ -61,6 +61,14 @@ typedef struct GanMetrics_ GanMetrics;
 /** Combined result of gf_run(): trained networks + final metrics. */
 typedef struct GanResult_  GanResult;
 
+/** A single neural-network layer (dense, conv, norm, attention, …).
+ *  Created by gf_layer_create_*; freed with gf_layer_free(). */
+typedef struct GanLayer_       GanLayer;
+
+/** A growable array of GanMatrix* values used for FID / IS computation.
+ *  Created by gf_matrix_array_create(); freed with gf_matrix_array_free(). */
+typedef struct GanMatrixArray_ GanMatrixArray;
+
 
 /* =========================================================================
  * Matrix API
@@ -466,6 +474,276 @@ const char* gf_detect_backend(void);
 
 /** Seed the global RNG from /dev/urandom (or equivalent). */
 void gf_secure_randomize(void);
+
+
+/* =========================================================================
+ * Matrix in-place & additional ops
+ * ========================================================================= */
+
+/** Add B into A element-wise in place. */
+void gf_matrix_add_in_place(GanMatrix* a, const GanMatrix* b);
+
+/** Scale A by scalar s in place. */
+void gf_matrix_scale_in_place(GanMatrix* a, float s);
+
+/** Clip each element of A to [lo, hi] in place. */
+void gf_matrix_clip_in_place(GanMatrix* a, float lo, float hi);
+
+/** Write val into (r,c); no-op if out of bounds. */
+void gf_matrix_safe_set(GanMatrix* m, int r, int c, float val);
+
+/** Compute activation backward pass.  act: "relu","sigmoid","tanh","leaky","none".
+ *  Free result with gf_matrix_free(). */
+GanMatrix* gf_activation_backward(const GanMatrix* grad_out,
+                                   const GanMatrix* pre_act,
+                                   const char* act);
+
+
+/* =========================================================================
+ * Generator extensions
+ * ========================================================================= */
+
+/** Conditional sample from the generator.
+ *  cond may be NULL (treated as empty).  Free result with gf_matrix_free(). */
+GanMatrix* gf_gen_sample_conditional(GanNetwork* gen,
+                                      int count, int noise_dim, int cond_sz,
+                                      const char* noise_type,
+                                      const GanMatrix* cond);
+
+/** Add a progressive-growing layer at resolution level res_lvl. */
+void gf_gen_add_progressive_layer(GanNetwork* gen, int res_lvl);
+
+/** Return the cached output of layer idx (after a forward pass).
+ *  Free result with gf_matrix_free(). */
+GanMatrix* gf_gen_get_layer_output(const GanNetwork* gen, int idx);
+
+/** Deep-copy the generator network.  Free result with gf_network_free(). */
+GanNetwork* gf_gen_deep_copy(const GanNetwork* gen);
+
+
+/* =========================================================================
+ * Discriminator extensions
+ * ========================================================================= */
+
+/** Run a discriminator forward pass.  Free result with gf_matrix_free(). */
+GanMatrix* gf_disc_evaluate(GanNetwork* disc, const GanMatrix* inp);
+
+/** Compute gradient penalty (WGAN-GP). */
+float gf_disc_grad_penalty(GanNetwork* disc,
+                            const GanMatrix* real, const GanMatrix* fake,
+                            float lambda);
+
+/** Feature-matching loss up to layer feat_layer. */
+float gf_disc_feature_match(GanNetwork* disc,
+                             const GanMatrix* real, const GanMatrix* fake,
+                             int feat_layer);
+
+/** Append minibatch standard-deviation as an extra feature row.
+ *  Free result with gf_matrix_free(). */
+GanMatrix* gf_disc_minibatch_std_dev(const GanMatrix* inp);
+
+/** Add a progressive-growing layer at resolution level res_lvl. */
+void gf_disc_add_progressive_layer(GanNetwork* disc, int res_lvl);
+
+/** Return the cached output of layer idx.  Free result with gf_matrix_free(). */
+GanMatrix* gf_disc_get_layer_output(const GanNetwork* disc, int idx);
+
+/** Deep-copy the discriminator network.  Free result with gf_network_free(). */
+GanNetwork* gf_disc_deep_copy(const GanNetwork* disc);
+
+
+/* =========================================================================
+ * Training extensions
+ * ========================================================================= */
+
+/** Apply accumulated gradients to all layers in net. */
+void gf_train_optimize(GanNetwork* net);
+
+/** Adam parameter update.  m_buf and v_buf are the moment matrices
+ *  (same shape as p/g); they are updated in place. */
+void gf_train_adam_update(GanMatrix* p, const GanMatrix* g,
+                           GanMatrix* m_buf, GanMatrix* v_buf,
+                           int t,
+                           float lr, float b1, float b2,
+                           float eps, float wd);
+
+/** SGD parameter update.  p and g must have the same shape. */
+void gf_train_sgd_update(GanMatrix* p, const GanMatrix* g,
+                          float lr, float wd);
+
+/** RMSProp parameter update.  cache is the running mean-square matrix. */
+void gf_train_rmsprop_update(GanMatrix* p, const GanMatrix* g,
+                              GanMatrix* cache,
+                              float lr, float decay, float eps, float wd);
+
+/** Apply label smoothing; returns new matrix.  Free with gf_matrix_free(). */
+GanMatrix* gf_train_label_smoothing(const GanMatrix* labels,
+                                     float lo, float hi);
+
+/** Load a BMP image dataset.  Free with gf_dataset_free(). */
+GanDataset* gf_train_load_bmp(const char* path);
+
+/** Load a WAV audio dataset.  Free with gf_dataset_free(). */
+GanDataset* gf_train_load_wav(const char* path);
+
+/** Augment a sample.  data_type: "image","audio","vector".
+ *  Free result with gf_matrix_free(). */
+GanMatrix* gf_train_augment(const GanMatrix* sample, const char* data_type);
+
+/** Append per-epoch metrics to a CSV file. */
+void gf_train_log_metrics(const GanMetrics* m, const char* filename);
+
+/** Save generated samples to dir at epoch ep.
+ *  noise_type: "gauss","uniform","analog". */
+void gf_train_save_samples(GanNetwork* gen, int ep, const char* dir,
+                            int noise_dim, const char* noise_type);
+
+/** Append d_loss/g_loss arrays (length cnt) to a CSV for plotting. */
+void gf_train_plot_csv(const char* filename,
+                        const float* d_loss, const float* g_loss, int cnt);
+
+/** Print an ASCII progress bar to stdout. */
+void gf_train_print_bar(float d_loss, float g_loss, int width);
+
+/** Compute Fréchet Inception Distance between real and fake sample arrays. */
+float gf_train_compute_fid(const GanMatrixArray* real_arr,
+                            const GanMatrixArray* fake_arr);
+
+/** Compute Inception Score for a sample array. */
+float gf_train_compute_is(const GanMatrixArray* samples);
+
+
+/* =========================================================================
+ * Security extensions
+ * ========================================================================= */
+
+/** Return one OS-random byte (/dev/urandom or equivalent). */
+unsigned char gf_sec_get_os_random(void);
+
+/** Encrypt model file in_f to out_f using XOR with key. */
+void gf_sec_encrypt_model(const char* in_f, const char* out_f,
+                           const char* key);
+
+/** Decrypt model file in_f to out_f using XOR with key. */
+void gf_sec_decrypt_model(const char* in_f, const char* out_f,
+                           const char* key);
+
+/** Run built-in security test suite.  Returns 1 on pass, 0 on failure. */
+int gf_sec_run_tests(void);
+
+/** Run fuzz tests for iterations rounds.  Returns 1 on pass, 0 on failure. */
+int gf_sec_run_fuzz_tests(int iterations);
+
+
+/* =========================================================================
+ * Layer API  (GanLayer)
+ * ========================================================================= */
+
+/** Free a GanLayer returned by any gf_layer_create_* function. */
+void gf_layer_free(GanLayer* layer);
+
+/** Create a dense (fully-connected) layer.
+ *  act: "relu","sigmoid","tanh","leaky","none".
+ *  Free with gf_layer_free(). */
+GanLayer* gf_layer_create_dense(int in_sz, int out_sz, const char* act);
+
+/** Create a Conv2D layer.  Free with gf_layer_free(). */
+GanLayer* gf_layer_create_conv2d(int in_ch, int out_ch,
+                                  int k_sz, int stride, int pad,
+                                  int w, int h,
+                                  const char* act);
+
+/** Create a transposed Conv2D (deconvolution) layer.  Free with gf_layer_free(). */
+GanLayer* gf_layer_create_deconv2d(int in_ch, int out_ch,
+                                    int k_sz, int stride, int pad,
+                                    int w, int h,
+                                    const char* act);
+
+/** Create a Conv1D layer.  Free with gf_layer_free(). */
+GanLayer* gf_layer_create_conv1d(int in_ch, int out_ch,
+                                  int k_sz, int stride, int pad,
+                                  int in_len,
+                                  const char* act);
+
+/** Create a Batch Normalisation layer.  Free with gf_layer_free(). */
+GanLayer* gf_layer_create_batch_norm(int features);
+
+/** Create a Layer Normalisation layer.  Free with gf_layer_free(). */
+GanLayer* gf_layer_create_layer_norm(int features);
+
+/** Create a multi-head self-attention layer.  Free with gf_layer_free(). */
+GanLayer* gf_layer_create_attention(int d_model, int n_heads);
+
+/** Dispatch forward pass through any layer type.
+ *  Free result with gf_matrix_free(). */
+GanMatrix* gf_layer_forward(GanLayer* layer, const GanMatrix* inp);
+
+/** Dispatch backward pass through any layer type.
+ *  Free result with gf_matrix_free(). */
+GanMatrix* gf_layer_backward(GanLayer* layer, const GanMatrix* grad);
+
+/** Initialise the per-layer optimizer.  opt: "adam","sgd","rmsprop". */
+void gf_layer_init_optimizer(GanLayer* layer, const char* opt);
+
+/** Conv2D forward.  Free result with gf_matrix_free(). */
+GanMatrix* gf_layer_conv2d(const GanMatrix* inp, GanLayer* layer);
+
+/** Conv2D backward.  Free result with gf_matrix_free(). */
+GanMatrix* gf_layer_conv2d_backward(GanLayer* layer, const GanMatrix* grad);
+
+/** Transposed Conv2D forward.  Free result with gf_matrix_free(). */
+GanMatrix* gf_layer_deconv2d(const GanMatrix* inp, GanLayer* layer);
+
+/** Transposed Conv2D backward.  Free result with gf_matrix_free(). */
+GanMatrix* gf_layer_deconv2d_backward(GanLayer* layer, const GanMatrix* grad);
+
+/** Conv1D forward.  Free result with gf_matrix_free(). */
+GanMatrix* gf_layer_conv1d(const GanMatrix* inp, GanLayer* layer);
+
+/** Conv1D backward.  Free result with gf_matrix_free(). */
+GanMatrix* gf_layer_conv1d_backward(GanLayer* layer, const GanMatrix* grad);
+
+/** Batch norm forward.  Free result with gf_matrix_free(). */
+GanMatrix* gf_layer_batch_norm(const GanMatrix* inp, GanLayer* layer);
+
+/** Batch norm backward.  Free result with gf_matrix_free(). */
+GanMatrix* gf_layer_batch_norm_backward(GanLayer* layer, const GanMatrix* grad);
+
+/** Layer norm forward.  Free result with gf_matrix_free(). */
+GanMatrix* gf_layer_layer_norm(const GanMatrix* inp, GanLayer* layer);
+
+/** Layer norm backward.  Free result with gf_matrix_free(). */
+GanMatrix* gf_layer_layer_norm_backward(GanLayer* layer, const GanMatrix* grad);
+
+/** Compute spectral norm of the layer weight matrix.
+ *  Free result with gf_matrix_free(). */
+GanMatrix* gf_layer_spectral_norm(GanLayer* layer);
+
+/** Self-attention forward.  Free result with gf_matrix_free(). */
+GanMatrix* gf_layer_attention(const GanMatrix* inp, GanLayer* layer);
+
+/** Self-attention backward.  Free result with gf_matrix_free(). */
+GanMatrix* gf_layer_attention_backward(GanLayer* layer, const GanMatrix* grad);
+
+/** Sanitise layer weights: replace NaN/Inf with 0 in place. */
+void gf_layer_verify_weights(GanLayer* layer);
+
+
+/* =========================================================================
+ * MatrixArray API  (GanMatrixArray)
+ * ========================================================================= */
+
+/** Create an empty matrix array.  Free with gf_matrix_array_free(). */
+GanMatrixArray* gf_matrix_array_create(void);
+
+/** Free a GanMatrixArray. */
+void gf_matrix_array_free(GanMatrixArray* arr);
+
+/** Append a copy of m to the array. */
+void gf_matrix_array_push(GanMatrixArray* arr, const GanMatrix* m);
+
+/** Number of matrices in the array. */
+int gf_matrix_array_len(const GanMatrixArray* arr);
 
 
 #ifdef __cplusplus

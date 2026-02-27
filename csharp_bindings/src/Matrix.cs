@@ -146,6 +146,20 @@ public sealed class Matrix : IDisposable
     /// act: "relu" | "sigmoid" | "tanh" | "leaky" | "none". Returns a new Matrix.</summary>
     public Matrix Activate(string act)   => new(Native.gf_activate(Handle, act));
 
+    // ── In-place ops ──────────────────────────────────────────────────────────
+
+    /// <summary>Add <paramref name="b"/> into this matrix element-wise in place.</summary>
+    public void AddInPlace(Matrix b)         => Native.gf_matrix_add_in_place(Handle, b.Handle);
+    /// <summary>Scale all elements by <paramref name="s"/> in place.</summary>
+    public void ScaleInPlace(float s)        => Native.gf_matrix_scale_in_place(Handle, s);
+    /// <summary>Clip all elements to [<paramref name="lo"/>, <paramref name="hi"/>] in place.</summary>
+    public void ClipInPlace(float lo, float hi) => Native.gf_matrix_clip_in_place(Handle, lo, hi);
+    /// <summary>Write <paramref name="val"/> at (<paramref name="r"/>, <paramref name="c"/>); no-op if out of bounds.</summary>
+    public void SafeSet(int r, int c, float val) => Native.gf_matrix_safe_set(Handle, r, c, val);
+    /// <summary>Compute activation backward pass. act: "relu"|"sigmoid"|"tanh"|"leaky"|"none".</summary>
+    public Matrix ActivationBackward(Matrix preAct, string act)
+        => new(Native.gf_activation_backward(Handle, preAct.Handle, act));
+
     public override string ToString() => $"Matrix({Rows}×{Cols})";
 }
 

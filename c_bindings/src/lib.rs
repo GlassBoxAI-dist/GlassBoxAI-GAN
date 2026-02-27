@@ -34,13 +34,15 @@ unsafe fn cstr(s: *const c_char) -> &'static str {
 // Opaque structs
 // =========================================================================
 
-pub struct GanMatrix  { flat: Vec<f32>, rows: i32, cols: i32 }
-pub struct GanVector  { data: Vec<f32> }
-pub struct GanNetwork { inner: Network }
-pub struct GanDataset { inner: Dataset }
-pub struct GanConfig  { inner: GANConfig }
-pub struct GanMetrics { inner: GANMetrics }
-pub struct GanResult  { inner: GANResult }
+pub struct GanMatrix      { flat: Vec<f32>, rows: i32, cols: i32 }
+pub struct GanVector      { data: Vec<f32> }
+pub struct GanNetwork     { inner: Network }
+pub struct GanDataset     { inner: Dataset }
+pub struct GanConfig      { inner: GANConfig }
+pub struct GanMetrics     { inner: GANMetrics }
+pub struct GanResult      { inner: GANResult }
+pub struct GanLayer       { inner: Layer }
+pub struct GanMatrixArray { inner: TMatrixArray }
 
 // =========================================================================
 // Internal converters
@@ -786,6 +788,686 @@ pub extern "C" fn gf_detect_backend() -> *const c_char {
 #[no_mangle]
 pub extern "C" fn gf_secure_randomize() {
     facade::gf_sec_secure_randomize();
+}
+
+// =========================================================================
+// Matrix in-place & missing ops
+// =========================================================================
+
+#[no_mangle]
+pub unsafe extern "C" fn gf_matrix_add_in_place(a: *mut GanMatrix, b: *const GanMatrix) {
+    if a.is_null() || b.is_null() { return; }
+    let mut am = gan_to_matrix(a);
+    facade::gf_op_matrix_add_in_place(&mut am, &gan_to_matrix(b));
+    let rows = am.len() as i32;
+    let cols = if rows > 0 { am[0].len() as i32 } else { 0 };
+    let mut flat = Vec::with_capacity((rows * cols) as usize);
+    for row in &am { flat.extend_from_slice(row); }
+    (*a).flat = flat; (*a).rows = rows; (*a).cols = cols;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn gf_matrix_scale_in_place(a: *mut GanMatrix, s: c_float) {
+    if a.is_null() { return; }
+    let mut am = gan_to_matrix(a);
+    facade::gf_op_matrix_scale_in_place(&mut am, s);
+    let rows = am.len() as i32;
+    let cols = if rows > 0 { am[0].len() as i32 } else { 0 };
+    let mut flat = Vec::with_capacity((rows * cols) as usize);
+    for row in &am { flat.extend_from_slice(row); }
+    (*a).flat = flat; (*a).rows = rows; (*a).cols = cols;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn gf_matrix_clip_in_place(a: *mut GanMatrix, lo: c_float, hi: c_float) {
+    if a.is_null() { return; }
+    let mut am = gan_to_matrix(a);
+    facade::gf_op_matrix_clip_in_place(&mut am, lo, hi);
+    let rows = am.len() as i32;
+    let cols = if rows > 0 { am[0].len() as i32 } else { 0 };
+    let mut flat = Vec::with_capacity((rows * cols) as usize);
+    for row in &am { flat.extend_from_slice(row); }
+    (*a).flat = flat; (*a).rows = rows; (*a).cols = cols;
+}
+
+/// Write val into matrix at (r, c); no-op if out of bounds.
+#[no_mangle]
+pub unsafe extern "C" fn gf_matrix_safe_set(
+    m: *mut GanMatrix, r: c_int, c: c_int, val: c_float,
+) {
+    if m.is_null() { return; }
+    let mut mm = gan_to_matrix(m);
+    facade::gf_op_safe_set(&mut mm, r, c, val);
+    let rows = mm.len() as i32;
+    let cols = if rows > 0 { mm[0].len() as i32 } else { 0 };
+    let mut flat = Vec::with_capacity((rows * cols) as usize);
+    for row in &mm { flat.extend_from_slice(row); }
+    (*m).flat = flat; (*m).rows = rows; (*m).cols = cols;
+}
+
+/// Compute activation backward pass.  act: "relu","sigmoid","tanh","leaky","none".
+/// Free result with gf_matrix_free().
+#[no_mangle]
+pub unsafe extern "C" fn gf_activation_backward(
+    grad_out: *const GanMatrix,
+    pre_act: *const GanMatrix,
+    act: *const c_char,
+) -> *mut GanMatrix {
+    if grad_out.is_null() || pre_act.is_null() { return std::ptr::null_mut(); }
+    let r = facade::gf_op_activation_backward(
+        &gan_to_matrix(grad_out),
+        &gan_to_matrix(pre_act),
+        parse_activation(cstr(act)),
+    );
+    matrix_to_gan(&r)
+}
+
+// =========================================================================
+// Generator extensions
+// =========================================================================
+
+/// Conditional sample from generator.  cond: conditioning matrix (may be null).
+/// Free result with gf_matrix_free().
+#[no_mangle]
+pub unsafe extern "C" fn gf_gen_sample_conditional(
+    gen: *mut GanNetwork,
+    count: c_int,
+    noise_dim: c_int,
+    cond_sz: c_int,
+    noise_type: *const c_char,
+    cond: *const GanMatrix,
+) -> *mut GanMatrix {
+    if gen.is_null() { return std::ptr::null_mut(); }
+    let cond_mat = if cond.is_null() { vec![] } else { gan_to_matrix(cond) };
+    let r = facade::gf_gen_sample_conditional(
+        &mut (*gen).inner, count, noise_dim, cond_sz,
+        parse_noise_type(cstr(noise_type)), &cond_mat,
+    );
+    matrix_to_gan(&r)
+}
+
+/// Add a progressive-growing layer to the generator at the given resolution level.
+#[no_mangle]
+pub unsafe extern "C" fn gf_gen_add_progressive_layer(gen: *mut GanNetwork, res_lvl: c_int) {
+    if gen.is_null() { return; }
+    facade::gf_gen_add_progressive_layer(&mut (*gen).inner, res_lvl);
+}
+
+/// Get the output of layer idx from the generator (after a forward pass).
+/// Free result with gf_matrix_free().
+#[no_mangle]
+pub unsafe extern "C" fn gf_gen_get_layer_output(
+    gen: *const GanNetwork, idx: c_int,
+) -> *mut GanMatrix {
+    if gen.is_null() { return std::ptr::null_mut(); }
+    let r = facade::gf_gen_get_layer_output(&(*gen).inner, idx);
+    matrix_to_gan(&r)
+}
+
+/// Deep-copy the generator.  Free result with gf_network_free().
+#[no_mangle]
+pub unsafe extern "C" fn gf_gen_deep_copy(gen: *const GanNetwork) -> *mut GanNetwork {
+    if gen.is_null() { return std::ptr::null_mut(); }
+    Box::into_raw(Box::new(GanNetwork { inner: facade::gf_gen_deep_copy(&(*gen).inner) }))
+}
+
+// =========================================================================
+// Discriminator extensions
+// =========================================================================
+
+/// Run discriminator forward pass (alias for gf_network_forward on disc).
+/// Free result with gf_matrix_free().
+#[no_mangle]
+pub unsafe extern "C" fn gf_disc_evaluate(
+    disc: *mut GanNetwork, inp: *const GanMatrix,
+) -> *mut GanMatrix {
+    if disc.is_null() || inp.is_null() { return std::ptr::null_mut(); }
+    let r = facade::gf_disc_evaluate(&mut (*disc).inner, &gan_to_matrix(inp));
+    matrix_to_gan(&r)
+}
+
+/// Gradient penalty (WGAN-GP).
+#[no_mangle]
+pub unsafe extern "C" fn gf_disc_grad_penalty(
+    disc: *mut GanNetwork,
+    real: *const GanMatrix,
+    fake: *const GanMatrix,
+    lambda: c_float,
+) -> c_float {
+    if disc.is_null() || real.is_null() || fake.is_null() { return 0.0; }
+    facade::gf_disc_grad_penalty(
+        &mut (*disc).inner, &gan_to_matrix(real), &gan_to_matrix(fake), lambda,
+    )
+}
+
+/// Feature matching loss between real and fake through discriminator up to feat_layer.
+#[no_mangle]
+pub unsafe extern "C" fn gf_disc_feature_match(
+    disc: *mut GanNetwork,
+    real: *const GanMatrix,
+    fake: *const GanMatrix,
+    feat_layer: c_int,
+) -> c_float {
+    if disc.is_null() || real.is_null() || fake.is_null() { return 0.0; }
+    facade::gf_disc_feature_match(
+        &mut (*disc).inner, &gan_to_matrix(real), &gan_to_matrix(fake), feat_layer,
+    )
+}
+
+/// Minibatch standard deviation (appends stats as an extra feature row).
+/// Free result with gf_matrix_free().
+#[no_mangle]
+pub unsafe extern "C" fn gf_disc_minibatch_std_dev(inp: *const GanMatrix) -> *mut GanMatrix {
+    if inp.is_null() { return std::ptr::null_mut(); }
+    let r = facade::gf_disc_minibatch_std_dev(&gan_to_matrix(inp));
+    matrix_to_gan(&r)
+}
+
+/// Add a progressive-growing layer to the discriminator at the given resolution level.
+#[no_mangle]
+pub unsafe extern "C" fn gf_disc_add_progressive_layer(disc: *mut GanNetwork, res_lvl: c_int) {
+    if disc.is_null() { return; }
+    facade::gf_disc_add_progressive_layer(&mut (*disc).inner, res_lvl);
+}
+
+/// Get the output of layer idx from the discriminator (after a forward pass).
+/// Free result with gf_matrix_free().
+#[no_mangle]
+pub unsafe extern "C" fn gf_disc_get_layer_output(
+    disc: *const GanNetwork, idx: c_int,
+) -> *mut GanMatrix {
+    if disc.is_null() { return std::ptr::null_mut(); }
+    let r = facade::gf_disc_get_layer_output(&(*disc).inner, idx);
+    matrix_to_gan(&r)
+}
+
+/// Deep-copy the discriminator.  Free result with gf_network_free().
+#[no_mangle]
+pub unsafe extern "C" fn gf_disc_deep_copy(disc: *const GanNetwork) -> *mut GanNetwork {
+    if disc.is_null() { return std::ptr::null_mut(); }
+    Box::into_raw(Box::new(GanNetwork { inner: facade::gf_disc_deep_copy(&(*disc).inner) }))
+}
+
+// =========================================================================
+// Training extensions
+// =========================================================================
+
+/// Update all weights in network using the pre-configured optimizer.
+#[no_mangle]
+pub unsafe extern "C" fn gf_train_optimize(net: *mut GanNetwork) {
+    if net.is_null() { return; }
+    facade::gf_train_optimize(&mut (*net).inner);
+}
+
+/// Adam parameter update.  m_buf/v_buf are the moment buffers (same shape as p/g).
+#[no_mangle]
+pub unsafe extern "C" fn gf_train_adam_update(
+    p:     *mut GanMatrix, g: *const GanMatrix,
+    m_buf: *mut GanMatrix, v_buf: *mut GanMatrix,
+    t: c_int, lr: c_float, b1: c_float, b2: c_float, eps: c_float, wd: c_float,
+) {
+    if p.is_null() || g.is_null() || m_buf.is_null() || v_buf.is_null() { return; }
+    let mut pm = gan_to_matrix(p);
+    let mut mm = gan_to_matrix(m_buf);
+    let mut vm = gan_to_matrix(v_buf);
+    facade::gf_train_adam_update(&mut pm, &gan_to_matrix(g), &mut mm, &mut vm, t, lr, b1, b2, eps, wd);
+    // write back p
+    let rows = pm.len() as i32;
+    let cols = if rows > 0 { pm[0].len() as i32 } else { 0 };
+    let mut flat = Vec::with_capacity((rows * cols) as usize);
+    for row in &pm { flat.extend_from_slice(row); }
+    (*p).flat = flat; (*p).rows = rows; (*p).cols = cols;
+    // write back m_buf
+    let rows = mm.len() as i32;
+    let cols = if rows > 0 { mm[0].len() as i32 } else { 0 };
+    let mut flat = Vec::with_capacity((rows * cols) as usize);
+    for row in &mm { flat.extend_from_slice(row); }
+    (*m_buf).flat = flat; (*m_buf).rows = rows; (*m_buf).cols = cols;
+    // write back v_buf
+    let rows = vm.len() as i32;
+    let cols = if rows > 0 { vm[0].len() as i32 } else { 0 };
+    let mut flat = Vec::with_capacity((rows * cols) as usize);
+    for row in &vm { flat.extend_from_slice(row); }
+    (*v_buf).flat = flat; (*v_buf).rows = rows; (*v_buf).cols = cols;
+}
+
+/// SGD parameter update.
+#[no_mangle]
+pub unsafe extern "C" fn gf_train_sgd_update(
+    p: *mut GanMatrix, g: *const GanMatrix, lr: c_float, wd: c_float,
+) {
+    if p.is_null() || g.is_null() { return; }
+    let mut pm = gan_to_matrix(p);
+    facade::gf_train_sgd_update(&mut pm, &gan_to_matrix(g), lr, wd);
+    let rows = pm.len() as i32;
+    let cols = if rows > 0 { pm[0].len() as i32 } else { 0 };
+    let mut flat = Vec::with_capacity((rows * cols) as usize);
+    for row in &pm { flat.extend_from_slice(row); }
+    (*p).flat = flat; (*p).rows = rows; (*p).cols = cols;
+}
+
+/// RMSProp parameter update.  cache is the running mean-square buffer.
+#[no_mangle]
+pub unsafe extern "C" fn gf_train_rmsprop_update(
+    p: *mut GanMatrix, g: *const GanMatrix, cache: *mut GanMatrix,
+    lr: c_float, decay: c_float, eps: c_float, wd: c_float,
+) {
+    if p.is_null() || g.is_null() || cache.is_null() { return; }
+    let mut pm = gan_to_matrix(p);
+    let mut cm = gan_to_matrix(cache);
+    facade::gf_train_rmsprop_update(&mut pm, &gan_to_matrix(g), &mut cm, lr, decay, eps, wd);
+    let rows = pm.len() as i32;
+    let cols = if rows > 0 { pm[0].len() as i32 } else { 0 };
+    let mut flat = Vec::with_capacity((rows * cols) as usize);
+    for row in &pm { flat.extend_from_slice(row); }
+    (*p).flat = flat; (*p).rows = rows; (*p).cols = cols;
+    let rows = cm.len() as i32;
+    let cols = if rows > 0 { cm[0].len() as i32 } else { 0 };
+    let mut flat = Vec::with_capacity((rows * cols) as usize);
+    for row in &cm { flat.extend_from_slice(row); }
+    (*cache).flat = flat; (*cache).rows = rows; (*cache).cols = cols;
+}
+
+/// Apply label smoothing; returns new label matrix.  Free with gf_matrix_free().
+#[no_mangle]
+pub unsafe extern "C" fn gf_train_label_smoothing(
+    labels: *const GanMatrix, lo: c_float, hi: c_float,
+) -> *mut GanMatrix {
+    if labels.is_null() { return std::ptr::null_mut(); }
+    let r = facade::gf_train_label_smoothing(&gan_to_matrix(labels), lo, hi);
+    matrix_to_gan(&r)
+}
+
+/// Load a BMP image dataset.  Free with gf_dataset_free().
+#[no_mangle]
+pub unsafe extern "C" fn gf_train_load_bmp(path: *const c_char) -> *mut GanDataset {
+    Box::into_raw(Box::new(GanDataset { inner: facade::gf_train_load_bmp(cstr(path)) }))
+}
+
+/// Load a WAV audio dataset.  Free with gf_dataset_free().
+#[no_mangle]
+pub unsafe extern "C" fn gf_train_load_wav(path: *const c_char) -> *mut GanDataset {
+    Box::into_raw(Box::new(GanDataset { inner: facade::gf_train_load_wav(cstr(path)) }))
+}
+
+/// Augment a single sample matrix.  data_type: "image","audio","vector".
+/// Free result with gf_matrix_free().
+#[no_mangle]
+pub unsafe extern "C" fn gf_train_augment(
+    sample: *const GanMatrix, data_type: *const c_char,
+) -> *mut GanMatrix {
+    if sample.is_null() { return std::ptr::null_mut(); }
+    let r = facade::gf_train_augment(&gan_to_matrix(sample), parse_data_type(cstr(data_type)));
+    matrix_to_gan(&r)
+}
+
+/// Append metrics to CSV file (filename).
+#[no_mangle]
+pub unsafe extern "C" fn gf_train_log_metrics(m: *const GanMetrics, filename: *const c_char) {
+    if m.is_null() { return; }
+    facade::gf_train_log_metrics(&(*m).inner, cstr(filename));
+}
+
+/// Save generated samples to dir.  noise_type: "gauss","uniform","analog".
+#[no_mangle]
+pub unsafe extern "C" fn gf_train_save_samples(
+    gen: *mut GanNetwork, ep: c_int, dir: *const c_char,
+    noise_dim: c_int, noise_type: *const c_char,
+) {
+    if gen.is_null() { return; }
+    facade::gf_train_save_samples(
+        &mut (*gen).inner, ep, cstr(dir), noise_dim, parse_noise_type(cstr(noise_type)),
+    );
+}
+
+/// Append per-epoch loss arrays to a CSV file for plotting.
+/// d_loss and g_loss are arrays of length cnt.
+#[no_mangle]
+pub unsafe extern "C" fn gf_train_plot_csv(
+    filename: *const c_char,
+    d_loss: *const c_float, g_loss: *const c_float, cnt: c_int,
+) {
+    if d_loss.is_null() || g_loss.is_null() { return; }
+    let d = std::slice::from_raw_parts(d_loss, cnt as usize);
+    let g = std::slice::from_raw_parts(g_loss, cnt as usize);
+    facade::gf_train_plot_csv(cstr(filename), d, g, cnt);
+}
+
+/// Print an ASCII loss bar to stdout.
+#[no_mangle]
+pub extern "C" fn gf_train_print_bar(d_loss: c_float, g_loss: c_float, width: c_int) {
+    facade::gf_train_print_bar(d_loss, g_loss, width);
+}
+
+/// Compute Fréchet Inception Distance between real and fake sample arrays.
+#[no_mangle]
+pub unsafe extern "C" fn gf_train_compute_fid(
+    real_arr: *const GanMatrixArray, fake_arr: *const GanMatrixArray,
+) -> c_float {
+    if real_arr.is_null() || fake_arr.is_null() { return 0.0; }
+    facade::gf_train_compute_fid(&(*real_arr).inner, &(*fake_arr).inner)
+}
+
+/// Compute Inception Score for a sample array.
+#[no_mangle]
+pub unsafe extern "C" fn gf_train_compute_is(samples: *const GanMatrixArray) -> c_float {
+    if samples.is_null() { return 0.0; }
+    facade::gf_train_compute_is(&(*samples).inner)
+}
+
+// =========================================================================
+// Security extensions
+// =========================================================================
+
+/// Return one OS-random byte.
+#[no_mangle]
+pub extern "C" fn gf_sec_get_os_random() -> u8 {
+    facade::gf_sec_get_os_random()
+}
+
+/// Encrypt model file in_f → out_f using XOR key.
+#[no_mangle]
+pub unsafe extern "C" fn gf_sec_encrypt_model(
+    in_f: *const c_char, out_f: *const c_char, key: *const c_char,
+) {
+    facade::gf_sec_encrypt_model(cstr(in_f), cstr(out_f), cstr(key));
+}
+
+/// Decrypt model file in_f → out_f using XOR key.
+#[no_mangle]
+pub unsafe extern "C" fn gf_sec_decrypt_model(
+    in_f: *const c_char, out_f: *const c_char, key: *const c_char,
+) {
+    facade::gf_sec_decrypt_model(cstr(in_f), cstr(out_f), cstr(key));
+}
+
+/// Run built-in security test suite.  Returns 1 on pass, 0 on failure.
+#[no_mangle]
+pub extern "C" fn gf_sec_run_tests() -> c_int {
+    facade::gf_sec_run_tests() as c_int
+}
+
+/// Run fuzz tests for `iterations` rounds.  Returns 1 on pass.
+#[no_mangle]
+pub extern "C" fn gf_sec_run_fuzz_tests(iterations: c_int) -> c_int {
+    facade::gf_sec_run_fuzz_tests(iterations) as c_int
+}
+
+// =========================================================================
+// GanLayer API
+// =========================================================================
+
+/// Free a GanLayer returned by any gf_layer_create_* function.
+#[no_mangle]
+pub unsafe extern "C" fn gf_layer_free(layer: *mut GanLayer) {
+    if !layer.is_null() { drop(Box::from_raw(layer)); }
+}
+
+/// Create a dense (fully-connected) layer.  act: "relu","sigmoid","tanh","leaky","none".
+#[no_mangle]
+pub unsafe extern "C" fn gf_layer_create_dense(
+    in_sz: c_int, out_sz: c_int, act: *const c_char,
+) -> *mut GanLayer {
+    Box::into_raw(Box::new(GanLayer {
+        inner: facade::gf_op_create_dense_layer(in_sz, out_sz, parse_activation(cstr(act))),
+    }))
+}
+
+/// Create a Conv2D layer.
+#[no_mangle]
+pub unsafe extern "C" fn gf_layer_create_conv2d(
+    in_ch: c_int, out_ch: c_int, k_sz: c_int, stride: c_int, pad: c_int,
+    w: c_int, h: c_int, act: *const c_char,
+) -> *mut GanLayer {
+    Box::into_raw(Box::new(GanLayer {
+        inner: facade::gf_op_create_conv2d_layer(
+            in_ch, out_ch, k_sz, stride, pad, w, h, parse_activation(cstr(act)),
+        ),
+    }))
+}
+
+/// Create a transposed Conv2D (deconvolution) layer.
+#[no_mangle]
+pub unsafe extern "C" fn gf_layer_create_deconv2d(
+    in_ch: c_int, out_ch: c_int, k_sz: c_int, stride: c_int, pad: c_int,
+    w: c_int, h: c_int, act: *const c_char,
+) -> *mut GanLayer {
+    Box::into_raw(Box::new(GanLayer {
+        inner: facade::gf_op_create_deconv2d_layer(
+            in_ch, out_ch, k_sz, stride, pad, w, h, parse_activation(cstr(act)),
+        ),
+    }))
+}
+
+/// Create a Conv1D layer.
+#[no_mangle]
+pub unsafe extern "C" fn gf_layer_create_conv1d(
+    in_ch: c_int, out_ch: c_int, k_sz: c_int, stride: c_int, pad: c_int,
+    in_len: c_int, act: *const c_char,
+) -> *mut GanLayer {
+    Box::into_raw(Box::new(GanLayer {
+        inner: facade::gf_op_create_conv1d_layer(
+            in_ch, out_ch, k_sz, stride, pad, in_len, parse_activation(cstr(act)),
+        ),
+    }))
+}
+
+/// Create a BatchNorm layer.
+#[no_mangle]
+pub unsafe extern "C" fn gf_layer_create_batch_norm(features: c_int) -> *mut GanLayer {
+    Box::into_raw(Box::new(GanLayer {
+        inner: facade::gf_op_create_batch_norm_layer(features),
+    }))
+}
+
+/// Create a LayerNorm layer.
+#[no_mangle]
+pub unsafe extern "C" fn gf_layer_create_layer_norm(features: c_int) -> *mut GanLayer {
+    Box::into_raw(Box::new(GanLayer {
+        inner: facade::gf_op_create_layer_norm_layer(features),
+    }))
+}
+
+/// Create a multi-head self-attention layer.
+#[no_mangle]
+pub unsafe extern "C" fn gf_layer_create_attention(
+    d_model: c_int, n_heads: c_int,
+) -> *mut GanLayer {
+    Box::into_raw(Box::new(GanLayer {
+        inner: facade::gf_op_create_attention_layer(d_model, n_heads),
+    }))
+}
+
+/// Run the layer forward pass.  Free result with gf_matrix_free().
+#[no_mangle]
+pub unsafe extern "C" fn gf_layer_forward(
+    layer: *mut GanLayer, inp: *const GanMatrix,
+) -> *mut GanMatrix {
+    if layer.is_null() || inp.is_null() { return std::ptr::null_mut(); }
+    let r = facade::gf_op_layer_forward(&mut (*layer).inner, &gan_to_matrix(inp));
+    matrix_to_gan(&r)
+}
+
+/// Run the layer backward pass.  Free result with gf_matrix_free().
+#[no_mangle]
+pub unsafe extern "C" fn gf_layer_backward(
+    layer: *mut GanLayer, grad: *const GanMatrix,
+) -> *mut GanMatrix {
+    if layer.is_null() || grad.is_null() { return std::ptr::null_mut(); }
+    let r = facade::gf_op_layer_backward(&mut (*layer).inner, &gan_to_matrix(grad));
+    matrix_to_gan(&r)
+}
+
+/// Initialise the layer optimizer.  opt: "adam","sgd","rmsprop".
+#[no_mangle]
+pub unsafe extern "C" fn gf_layer_init_optimizer(layer: *mut GanLayer, opt: *const c_char) {
+    if layer.is_null() { return; }
+    facade::gf_op_init_layer_optimizer(&mut (*layer).inner, parse_optimizer(cstr(opt)));
+}
+
+/// Conv2D forward pass on a standalone layer.  Free result with gf_matrix_free().
+#[no_mangle]
+pub unsafe extern "C" fn gf_layer_conv2d(
+    inp: *const GanMatrix, layer: *mut GanLayer,
+) -> *mut GanMatrix {
+    if inp.is_null() || layer.is_null() { return std::ptr::null_mut(); }
+    let r = facade::gf_op_conv2d(&gan_to_matrix(inp), &mut (*layer).inner);
+    matrix_to_gan(&r)
+}
+
+/// Conv2D backward pass.  Free result with gf_matrix_free().
+#[no_mangle]
+pub unsafe extern "C" fn gf_layer_conv2d_backward(
+    layer: *mut GanLayer, grad: *const GanMatrix,
+) -> *mut GanMatrix {
+    if layer.is_null() || grad.is_null() { return std::ptr::null_mut(); }
+    let r = facade::gf_op_conv2d_backward(&mut (*layer).inner, &gan_to_matrix(grad));
+    matrix_to_gan(&r)
+}
+
+/// Deconv2D (transposed conv) forward pass.  Free result with gf_matrix_free().
+#[no_mangle]
+pub unsafe extern "C" fn gf_layer_deconv2d(
+    inp: *const GanMatrix, layer: *mut GanLayer,
+) -> *mut GanMatrix {
+    if inp.is_null() || layer.is_null() { return std::ptr::null_mut(); }
+    let r = facade::gf_op_deconv2d(&gan_to_matrix(inp), &mut (*layer).inner);
+    matrix_to_gan(&r)
+}
+
+/// Deconv2D backward pass.  Free result with gf_matrix_free().
+#[no_mangle]
+pub unsafe extern "C" fn gf_layer_deconv2d_backward(
+    layer: *mut GanLayer, grad: *const GanMatrix,
+) -> *mut GanMatrix {
+    if layer.is_null() || grad.is_null() { return std::ptr::null_mut(); }
+    let r = facade::gf_op_deconv2d_backward(&mut (*layer).inner, &gan_to_matrix(grad));
+    matrix_to_gan(&r)
+}
+
+/// Conv1D forward pass.  Free result with gf_matrix_free().
+#[no_mangle]
+pub unsafe extern "C" fn gf_layer_conv1d(
+    inp: *const GanMatrix, layer: *mut GanLayer,
+) -> *mut GanMatrix {
+    if inp.is_null() || layer.is_null() { return std::ptr::null_mut(); }
+    let r = facade::gf_op_conv1d(&gan_to_matrix(inp), &mut (*layer).inner);
+    matrix_to_gan(&r)
+}
+
+/// Conv1D backward pass.  Free result with gf_matrix_free().
+#[no_mangle]
+pub unsafe extern "C" fn gf_layer_conv1d_backward(
+    layer: *mut GanLayer, grad: *const GanMatrix,
+) -> *mut GanMatrix {
+    if layer.is_null() || grad.is_null() { return std::ptr::null_mut(); }
+    let r = facade::gf_op_conv1d_backward(&mut (*layer).inner, &gan_to_matrix(grad));
+    matrix_to_gan(&r)
+}
+
+/// Batch normalization forward pass.  Free result with gf_matrix_free().
+#[no_mangle]
+pub unsafe extern "C" fn gf_layer_batch_norm(
+    inp: *const GanMatrix, layer: *mut GanLayer,
+) -> *mut GanMatrix {
+    if inp.is_null() || layer.is_null() { return std::ptr::null_mut(); }
+    let r = facade::gf_op_batch_norm(&gan_to_matrix(inp), &mut (*layer).inner);
+    matrix_to_gan(&r)
+}
+
+/// Batch normalization backward pass.  Free result with gf_matrix_free().
+#[no_mangle]
+pub unsafe extern "C" fn gf_layer_batch_norm_backward(
+    layer: *mut GanLayer, grad: *const GanMatrix,
+) -> *mut GanMatrix {
+    if layer.is_null() || grad.is_null() { return std::ptr::null_mut(); }
+    let r = facade::gf_op_batch_norm_backward(&mut (*layer).inner, &gan_to_matrix(grad));
+    matrix_to_gan(&r)
+}
+
+/// Layer normalization forward pass.  Free result with gf_matrix_free().
+#[no_mangle]
+pub unsafe extern "C" fn gf_layer_layer_norm(
+    inp: *const GanMatrix, layer: *mut GanLayer,
+) -> *mut GanMatrix {
+    if inp.is_null() || layer.is_null() { return std::ptr::null_mut(); }
+    let r = facade::gf_op_layer_norm(&gan_to_matrix(inp), &mut (*layer).inner);
+    matrix_to_gan(&r)
+}
+
+/// Layer normalization backward pass.  Free result with gf_matrix_free().
+#[no_mangle]
+pub unsafe extern "C" fn gf_layer_layer_norm_backward(
+    layer: *mut GanLayer, grad: *const GanMatrix,
+) -> *mut GanMatrix {
+    if layer.is_null() || grad.is_null() { return std::ptr::null_mut(); }
+    let r = facade::gf_op_layer_norm_backward(&mut (*layer).inner, &gan_to_matrix(grad));
+    matrix_to_gan(&r)
+}
+
+/// Compute spectral norm of the layer weights.  Free result with gf_matrix_free().
+#[no_mangle]
+pub unsafe extern "C" fn gf_layer_spectral_norm(layer: *mut GanLayer) -> *mut GanMatrix {
+    if layer.is_null() { return std::ptr::null_mut(); }
+    let r = facade::gf_op_spectral_norm(&mut (*layer).inner);
+    matrix_to_gan(&r)
+}
+
+/// Self-attention forward pass.  Free result with gf_matrix_free().
+#[no_mangle]
+pub unsafe extern "C" fn gf_layer_attention(
+    inp: *const GanMatrix, layer: *mut GanLayer,
+) -> *mut GanMatrix {
+    if inp.is_null() || layer.is_null() { return std::ptr::null_mut(); }
+    let r = facade::gf_op_attention(&gan_to_matrix(inp), &mut (*layer).inner);
+    matrix_to_gan(&r)
+}
+
+/// Self-attention backward pass.  Free result with gf_matrix_free().
+#[no_mangle]
+pub unsafe extern "C" fn gf_layer_attention_backward(
+    layer: *mut GanLayer, grad: *const GanMatrix,
+) -> *mut GanMatrix {
+    if layer.is_null() || grad.is_null() { return std::ptr::null_mut(); }
+    let r = facade::gf_op_attention_backward(&mut (*layer).inner, &gan_to_matrix(grad));
+    matrix_to_gan(&r)
+}
+
+/// Validate and clean NaN/Inf values from layer weights in-place.
+#[no_mangle]
+pub unsafe extern "C" fn gf_layer_verify_weights(layer: *mut GanLayer) {
+    if layer.is_null() { return; }
+    facade::gf_sec_verify_weights(&mut (*layer).inner);
+}
+
+// =========================================================================
+// GanMatrixArray API  (used for FID / IS metrics)
+// =========================================================================
+
+/// Create an empty matrix array.  Free with gf_matrix_array_free().
+#[no_mangle]
+pub extern "C" fn gf_matrix_array_create() -> *mut GanMatrixArray {
+    Box::into_raw(Box::new(GanMatrixArray { inner: Vec::new() }))
+}
+
+/// Free a GanMatrixArray.
+#[no_mangle]
+pub unsafe extern "C" fn gf_matrix_array_free(arr: *mut GanMatrixArray) {
+    if !arr.is_null() { drop(Box::from_raw(arr)); }
+}
+
+/// Append a copy of matrix m into the array.
+#[no_mangle]
+pub unsafe extern "C" fn gf_matrix_array_push(arr: *mut GanMatrixArray, m: *const GanMatrix) {
+    if arr.is_null() || m.is_null() { return; }
+    (*arr).inner.push(gan_to_matrix(m));
+}
+
+/// Return the number of matrices in the array.
+#[no_mangle]
+pub unsafe extern "C" fn gf_matrix_array_len(arr: *const GanMatrixArray) -> c_int {
+    if arr.is_null() { return 0; }
+    (*arr).inner.len() as c_int
 }
 
 // =========================================================================

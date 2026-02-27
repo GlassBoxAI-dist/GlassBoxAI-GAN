@@ -99,5 +99,25 @@ public sealed class Network : IDisposable
     /// <summary>Load weights from <paramref name="path"/> (binary format).</summary>
     public void Load(string path) => Native.gf_network_load(Handle, path);
 
+    // ── Generator extensions ──────────────────────────────────────────────────
+
+    public Matrix   SampleConditional(int count, int noiseDim, int condSz, string noiseType, Matrix cond)
+        => new(Native.gf_gen_sample_conditional(Handle, count, noiseDim, condSz, noiseType, cond.Handle));
+    public void     AddProgressiveLayer(int resLvl) => Native.gf_gen_add_progressive_layer(Handle, resLvl);
+    public Matrix   GetLayerOutput(int idx)         => new(Native.gf_gen_get_layer_output(Handle, idx));
+    public Network  DeepCopy()                      => new(Native.gf_gen_deep_copy(Handle));
+    public void     Optimize()                      => Native.gf_train_optimize(Handle);
+
+    // ── Discriminator extensions ──────────────────────────────────────────────
+
+    public Matrix  DiscEvaluate(Matrix inp)   => new(Native.gf_disc_evaluate(Handle, inp.Handle));
+    public float   DiscGradPenalty(Matrix real, Matrix fake, float lambda)
+        => Native.gf_disc_grad_penalty(Handle, real.Handle, fake.Handle, lambda);
+    public float   DiscFeatureMatch(Matrix real, Matrix fake, int featLayer)
+        => Native.gf_disc_feature_match(Handle, real.Handle, fake.Handle, featLayer);
+    public void    DiscAddProgressiveLayer(int resLvl) => Native.gf_disc_add_progressive_layer(Handle, resLvl);
+    public Matrix  DiscGetLayerOutput(int idx) => new(Native.gf_disc_get_layer_output(Handle, idx));
+    public Network DiscDeepCopy()              => new(Native.gf_disc_deep_copy(Handle));
+
     public override string ToString() => $"Network(layers={LayerCount}, lr={LearningRate:G4})";
 }

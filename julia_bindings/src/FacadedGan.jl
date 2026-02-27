@@ -683,4 +683,432 @@ validate_path(path::AbstractString) =
 audit_log(msg::AbstractString, log_file::AbstractString) =
     ccall((:gf_audit_log, _lib), Cvoid, (Cstring, Cstring), msg, log_file)
 
+# ─── Matrix in-place operations ───────────────────────────────────────────────
+
+"""Add `b` into `a` in place."""
+function matrix_add_in_place(a::Matrix, b::Matrix)
+    ccall((:gf_matrix_add_in_place, _lib), Cvoid, (Ptr{Cvoid}, Ptr{Cvoid}), a.ptr, b.ptr)
+end
+
+"""Scale `a` by `s` in place."""
+function matrix_scale_in_place(a::Matrix, s::Real)
+    ccall((:gf_matrix_scale_in_place, _lib), Cvoid, (Ptr{Cvoid}, Cfloat), a.ptr, Float32(s))
+end
+
+"""Clip all elements of `a` to [lo, hi] in place."""
+function matrix_clip_in_place(a::Matrix, lo::Real, hi::Real)
+    ccall((:gf_matrix_clip_in_place, _lib), Cvoid, (Ptr{Cvoid}, Cfloat, Cfloat),
+          a.ptr, Float32(lo), Float32(hi))
+end
+
+"""Safe element write (1-based); no-op on out-of-range."""
+function matrix_safe_set(m::Matrix, i::Int, j::Int, v::Real)
+    ccall((:gf_matrix_safe_set, _lib), Cvoid, (Ptr{Cvoid}, Cint, Cint, Cfloat),
+          m.ptr, i - 1, j - 1, Float32(v))
+end
+
+"""Backward pass through an activation function (element-wise derivative × `grad`)."""
+function matrix_activation_backward(a::Matrix, grad::Matrix, act::AbstractString)
+    _mat(ccall((:gf_matrix_activation_backward, _lib), Ptr{Cvoid},
+               (Ptr{Cvoid}, Ptr{Cvoid}, Cstring), a.ptr, grad.ptr, act))
+end
+
+# ─── GanLayer ─────────────────────────────────────────────────────────────────
+
+"""
+    GanLayer  (opaque)
+
+A single network layer (dense, conv2d, deconv2d, conv1d, batch-norm,
+layer-norm, or attention). Obtain via one of the `layer_create_*` functions.
+Memory is released automatically by the GC finalizer, or explicitly with
+`free!(layer)`.
+"""
+mutable struct GanLayer
+    ptr::Ptr{Cvoid}
+
+    GanLayer(ptr::Ptr{Cvoid}) = _finalize!(new(ptr), :gf_layer_free)
+    GanLayer(ptr::Ptr{Cvoid}, ::Val{:adopt}) = _finalize!(new(ptr), :gf_layer_free)
+end
+
+_layer(ptr::Ptr{Cvoid}) = (_check(ptr, "gf_layer_*"); GanLayer(ptr, Val(:adopt)))
+
+free!(l::GanLayer) = (l.ptr != C_NULL && (ccall((:gf_layer_free, _lib), Cvoid, (Ptr{Cvoid},), l.ptr); l.ptr = C_NULL))
+
+Base.show(io::IO, l::GanLayer) = print(io, "GanLayer(ptr=$(l.ptr))")
+
+# ── Layer factory functions ────────────────────────────────────────────────────
+
+"""Create a dense (fully-connected) layer with `in_sz` inputs and `out_sz` outputs."""
+function layer_create_dense(in_sz::Integer, out_sz::Integer,
+                            act::AbstractString="relu",
+                            opt::AbstractString="adam",
+                            lr::Real=0.0002f0)
+    _layer(ccall((:gf_layer_create_dense, _lib), Ptr{Cvoid},
+                 (Cint, Cint, Cstring, Cstring, Cfloat),
+                 in_sz, out_sz, act, opt, Float32(lr)))
+end
+
+"""Create a 2-D convolution layer."""
+function layer_create_conv2d(in_ch::Integer, out_ch::Integer,
+                             kernel::Integer, stride::Integer, pad::Integer,
+                             act::AbstractString="relu",
+                             opt::AbstractString="adam",
+                             lr::Real=0.0002f0)
+    _layer(ccall((:gf_layer_create_conv2d, _lib), Ptr{Cvoid},
+                 (Cint, Cint, Cint, Cint, Cint, Cstring, Cstring, Cfloat),
+                 in_ch, out_ch, kernel, stride, pad, act, opt, Float32(lr)))
+end
+
+"""Create a 2-D transposed convolution (deconv) layer."""
+function layer_create_deconv2d(in_ch::Integer, out_ch::Integer,
+                               kernel::Integer, stride::Integer, pad::Integer,
+                               act::AbstractString="relu",
+                               opt::AbstractString="adam",
+                               lr::Real=0.0002f0)
+    _layer(ccall((:gf_layer_create_deconv2d, _lib), Ptr{Cvoid},
+                 (Cint, Cint, Cint, Cint, Cint, Cstring, Cstring, Cfloat),
+                 in_ch, out_ch, kernel, stride, pad, act, opt, Float32(lr)))
+end
+
+"""Create a 1-D convolution layer."""
+function layer_create_conv1d(in_ch::Integer, out_ch::Integer,
+                             kernel::Integer, stride::Integer, pad::Integer,
+                             act::AbstractString="relu",
+                             opt::AbstractString="adam",
+                             lr::Real=0.0002f0)
+    _layer(ccall((:gf_layer_create_conv1d, _lib), Ptr{Cvoid},
+                 (Cint, Cint, Cint, Cint, Cint, Cstring, Cstring, Cfloat),
+                 in_ch, out_ch, kernel, stride, pad, act, opt, Float32(lr)))
+end
+
+"""Create a batch-normalisation layer with `features` feature channels."""
+function layer_create_batch_norm(features::Integer, lr::Real=0.0002f0)
+    _layer(ccall((:gf_layer_create_batch_norm, _lib), Ptr{Cvoid},
+                 (Cint, Cfloat), features, Float32(lr)))
+end
+
+"""Create a layer-normalisation layer with `features` feature channels."""
+function layer_create_layer_norm(features::Integer, lr::Real=0.0002f0)
+    _layer(ccall((:gf_layer_create_layer_norm, _lib), Ptr{Cvoid},
+                 (Cint, Cfloat), features, Float32(lr)))
+end
+
+"""Create a self-attention layer."""
+function layer_create_attention(embed_dim::Integer, num_heads::Integer,
+                                opt::AbstractString="adam",
+                                lr::Real=0.0002f0)
+    _layer(ccall((:gf_layer_create_attention, _lib), Ptr{Cvoid},
+                 (Cint, Cint, Cstring, Cfloat),
+                 embed_dim, num_heads, opt, Float32(lr)))
+end
+
+# ── Layer methods ──────────────────────────────────────────────────────────────
+
+"""Run a forward pass through `l`. Returns output `Matrix`."""
+layer_forward(l::GanLayer, inp::Matrix) =
+    _mat(ccall((:gf_layer_forward, _lib), Ptr{Cvoid},
+               (Ptr{Cvoid}, Ptr{Cvoid}), l.ptr, inp.ptr))
+
+"""Run a backward pass through `l`. Returns gradient `Matrix`."""
+layer_backward(l::GanLayer, grad::Matrix) =
+    _mat(ccall((:gf_layer_backward, _lib), Ptr{Cvoid},
+               (Ptr{Cvoid}, Ptr{Cvoid}), l.ptr, grad.ptr))
+
+"""Initialise the optimizer state for `l`."""
+layer_init_optimizer(l::GanLayer, opt::AbstractString, lr::Real) =
+    ccall((:gf_layer_init_optimizer, _lib), Cvoid,
+          (Ptr{Cvoid}, Cstring, Cfloat), l.ptr, opt, Float32(lr))
+
+"""2-D convolution forward pass."""
+layer_conv2d(l::GanLayer, inp::Matrix) =
+    _mat(ccall((:gf_layer_conv2d, _lib), Ptr{Cvoid},
+               (Ptr{Cvoid}, Ptr{Cvoid}), l.ptr, inp.ptr))
+
+"""2-D convolution backward pass."""
+layer_conv2d_backward(l::GanLayer, grad::Matrix) =
+    _mat(ccall((:gf_layer_conv2d_backward, _lib), Ptr{Cvoid},
+               (Ptr{Cvoid}, Ptr{Cvoid}), l.ptr, grad.ptr))
+
+"""2-D transposed convolution forward pass."""
+layer_deconv2d(l::GanLayer, inp::Matrix) =
+    _mat(ccall((:gf_layer_deconv2d, _lib), Ptr{Cvoid},
+               (Ptr{Cvoid}, Ptr{Cvoid}), l.ptr, inp.ptr))
+
+"""2-D transposed convolution backward pass."""
+layer_deconv2d_backward(l::GanLayer, grad::Matrix) =
+    _mat(ccall((:gf_layer_deconv2d_backward, _lib), Ptr{Cvoid},
+               (Ptr{Cvoid}, Ptr{Cvoid}), l.ptr, grad.ptr))
+
+"""1-D convolution forward pass."""
+layer_conv1d(l::GanLayer, inp::Matrix) =
+    _mat(ccall((:gf_layer_conv1d, _lib), Ptr{Cvoid},
+               (Ptr{Cvoid}, Ptr{Cvoid}), l.ptr, inp.ptr))
+
+"""1-D convolution backward pass."""
+layer_conv1d_backward(l::GanLayer, grad::Matrix) =
+    _mat(ccall((:gf_layer_conv1d_backward, _lib), Ptr{Cvoid},
+               (Ptr{Cvoid}, Ptr{Cvoid}), l.ptr, grad.ptr))
+
+"""Batch normalisation forward pass."""
+layer_batch_norm(l::GanLayer, inp::Matrix) =
+    _mat(ccall((:gf_layer_batch_norm, _lib), Ptr{Cvoid},
+               (Ptr{Cvoid}, Ptr{Cvoid}), l.ptr, inp.ptr))
+
+"""Batch normalisation backward pass."""
+layer_batch_norm_backward(l::GanLayer, grad::Matrix) =
+    _mat(ccall((:gf_layer_batch_norm_backward, _lib), Ptr{Cvoid},
+               (Ptr{Cvoid}, Ptr{Cvoid}), l.ptr, grad.ptr))
+
+"""Layer normalisation forward pass."""
+layer_layer_norm(l::GanLayer, inp::Matrix) =
+    _mat(ccall((:gf_layer_layer_norm, _lib), Ptr{Cvoid},
+               (Ptr{Cvoid}, Ptr{Cvoid}), l.ptr, inp.ptr))
+
+"""Layer normalisation backward pass."""
+layer_layer_norm_backward(l::GanLayer, grad::Matrix) =
+    _mat(ccall((:gf_layer_layer_norm_backward, _lib), Ptr{Cvoid},
+               (Ptr{Cvoid}, Ptr{Cvoid}), l.ptr, grad.ptr))
+
+"""Apply spectral normalisation to `l`'s weights in place."""
+layer_spectral_norm(l::GanLayer) =
+    ccall((:gf_layer_spectral_norm, _lib), Cvoid, (Ptr{Cvoid},), l.ptr)
+
+"""Self-attention forward pass."""
+layer_attention(l::GanLayer, inp::Matrix) =
+    _mat(ccall((:gf_layer_attention, _lib), Ptr{Cvoid},
+               (Ptr{Cvoid}, Ptr{Cvoid}), l.ptr, inp.ptr))
+
+"""Self-attention backward pass."""
+layer_attention_backward(l::GanLayer, grad::Matrix) =
+    _mat(ccall((:gf_layer_attention_backward, _lib), Ptr{Cvoid},
+               (Ptr{Cvoid}, Ptr{Cvoid}), l.ptr, grad.ptr))
+
+"""Sanitise weights in `l` (replace NaN/Inf with 0)."""
+layer_verify_weights(l::GanLayer) =
+    ccall((:gf_layer_verify_weights, _lib), Cvoid, (Ptr{Cvoid},), l.ptr)
+
+# ─── GanMatrixArray ───────────────────────────────────────────────────────────
+
+"""
+    GanMatrixArray  (opaque)
+
+A growable, heap-allocated array of `Matrix` objects managed on the C side.
+Obtain via `matrix_array_create()` and release with `free!` or the GC finalizer.
+"""
+mutable struct GanMatrixArray
+    ptr::Ptr{Cvoid}
+
+    GanMatrixArray(ptr::Ptr{Cvoid}) = _finalize!(new(ptr), :gf_matrix_array_free)
+    GanMatrixArray(ptr::Ptr{Cvoid}, ::Val{:adopt}) = _finalize!(new(ptr), :gf_matrix_array_free)
+end
+
+_marr(ptr::Ptr{Cvoid}) = (_check(ptr, "gf_matrix_array_*"); GanMatrixArray(ptr, Val(:adopt)))
+
+free!(a::GanMatrixArray) = (a.ptr != C_NULL && (ccall((:gf_matrix_array_free, _lib), Cvoid, (Ptr{Cvoid},), a.ptr); a.ptr = C_NULL))
+
+Base.show(io::IO, a::GanMatrixArray) = print(io, "GanMatrixArray(len=$(matrix_array_len(a)))")
+
+"""Create an empty `GanMatrixArray`."""
+matrix_array_create() =
+    _marr(ccall((:gf_matrix_array_create, _lib), Ptr{Cvoid}, ()))
+
+"""Append a `Matrix` to `arr` (the C side takes ownership of a reference)."""
+matrix_array_push(arr::GanMatrixArray, m::Matrix) =
+    ccall((:gf_matrix_array_push, _lib), Cvoid, (Ptr{Cvoid}, Ptr{Cvoid}), arr.ptr, m.ptr)
+
+"""Return the number of matrices stored in `arr`."""
+matrix_array_len(arr::GanMatrixArray) =
+    Int(ccall((:gf_matrix_array_len, _lib), Cint, (Ptr{Cvoid},), arr.ptr))
+
+Base.length(arr::GanMatrixArray) = matrix_array_len(arr)
+
+# ─── Network extensions ────────────────────────────────────────────────────────
+
+"""
+    gen_sample_conditional(gen, count, noise_dim, cond_sz, noise_type, cond) -> Matrix
+
+Generate `count` conditional samples using `cond` (a `Matrix` of conditioning
+vectors, one per row) and the given `noise_type`.
+"""
+gen_sample_conditional(gen::Network, count::Integer, noise_dim::Integer,
+                       cond_sz::Integer, noise_type::AbstractString,
+                       cond::Matrix) =
+    _mat(ccall((:gf_gen_sample_conditional, _lib), Ptr{Cvoid},
+               (Ptr{Cvoid}, Cint, Cint, Cint, Cstring, Ptr{Cvoid}),
+               gen.ptr, count, noise_dim, cond_sz, noise_type, cond.ptr))
+
+"""Add a progressive-growth layer at resolution level `res_lvl` to a generator."""
+gen_add_progressive_layer(gen::Network, res_lvl::Integer) =
+    ccall((:gf_gen_add_progressive_layer, _lib), Cvoid, (Ptr{Cvoid}, Cint), gen.ptr, res_lvl)
+
+"""Return the output `Matrix` of the layer at index `idx` (0-based) in a generator."""
+gen_get_layer_output(gen::Network, idx::Integer) =
+    _mat(ccall((:gf_gen_get_layer_output, _lib), Ptr{Cvoid},
+               (Ptr{Cvoid}, Cint), gen.ptr, idx))
+
+"""Return a deep copy of generator `gen` as a new `Network`."""
+gen_deep_copy(gen::Network) =
+    _net(ccall((:gf_gen_deep_copy, _lib), Ptr{Cvoid}, (Ptr{Cvoid},), gen.ptr))
+
+"""Run a discriminator forward pass on `inp`. Returns output `Matrix`."""
+disc_evaluate(disc::Network, inp::Matrix) =
+    _mat(ccall((:gf_disc_evaluate, _lib), Ptr{Cvoid},
+               (Ptr{Cvoid}, Ptr{Cvoid}), disc.ptr, inp.ptr))
+
+"""Compute the gradient penalty between `real` and `fake` with coefficient `lambda`."""
+disc_grad_penalty(disc::Network, real::Matrix, fake::Matrix, lambda::Real) =
+    Float32(ccall((:gf_disc_grad_penalty, _lib), Cfloat,
+                  (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Cfloat),
+                  disc.ptr, real.ptr, fake.ptr, Float32(lambda)))
+
+"""Compute the feature-matching loss between `real` and `fake` at layer `feat_layer`."""
+disc_feature_match(disc::Network, real::Matrix, fake::Matrix, feat_layer::Integer) =
+    Float32(ccall((:gf_disc_feature_match, _lib), Cfloat,
+                  (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Cint),
+                  disc.ptr, real.ptr, fake.ptr, feat_layer))
+
+"""Compute the minibatch standard deviation of `inp`. Returns a `Matrix`."""
+disc_minibatch_std_dev(inp::Matrix) =
+    _mat(ccall((:gf_disc_minibatch_std_dev, _lib), Ptr{Cvoid}, (Ptr{Cvoid},), inp.ptr))
+
+"""Add a progressive-growth layer at resolution level `res_lvl` to a discriminator."""
+disc_add_progressive_layer(disc::Network, res_lvl::Integer) =
+    ccall((:gf_disc_add_progressive_layer, _lib), Cvoid, (Ptr{Cvoid}, Cint), disc.ptr, res_lvl)
+
+"""Return the output `Matrix` of the layer at index `idx` (0-based) in a discriminator."""
+disc_get_layer_output(disc::Network, idx::Integer) =
+    _mat(ccall((:gf_disc_get_layer_output, _lib), Ptr{Cvoid},
+               (Ptr{Cvoid}, Cint), disc.ptr, idx))
+
+"""Return a deep copy of discriminator `disc` as a new `Network`."""
+disc_deep_copy(disc::Network) =
+    _net(ccall((:gf_disc_deep_copy, _lib), Ptr{Cvoid}, (Ptr{Cvoid},), disc.ptr))
+
+# ─── Training extensions ──────────────────────────────────────────────────────
+
+"""Apply the optimizer update step to all trainable parameters in `net`."""
+train_optimize(net::Network) =
+    ccall((:gf_train_optimize, _lib), Cvoid, (Ptr{Cvoid},), net.ptr)
+
+"""
+    train_adam_update(p, g, m_buf, v_buf, t, lr, b1, b2, eps, wd)
+
+In-place Adam parameter update.
+`p`     – parameter matrix (updated in place)
+`g`     – gradient matrix
+`m_buf` – first-moment buffer (updated in place)
+`v_buf` – second-moment buffer (updated in place)
+`t`     – time step (integer, ≥ 1)
+`lr`, `b1`, `b2`, `eps`, `wd` – Adam hyper-parameters
+"""
+train_adam_update(p::Matrix, g::Matrix, m_buf::Matrix, v_buf::Matrix,
+                  t::Integer, lr::Real, b1::Real, b2::Real, eps::Real, wd::Real) =
+    ccall((:gf_train_adam_update, _lib), Cvoid,
+          (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid},
+           Cint, Cfloat, Cfloat, Cfloat, Cfloat, Cfloat),
+          p.ptr, g.ptr, m_buf.ptr, v_buf.ptr,
+          Cint(t), Float32(lr), Float32(b1), Float32(b2), Float32(eps), Float32(wd))
+
+"""
+    train_sgd_update(p, g, lr, wd)
+
+In-place SGD (with optional weight decay) parameter update.
+"""
+train_sgd_update(p::Matrix, g::Matrix, lr::Real, wd::Real) =
+    ccall((:gf_train_sgd_update, _lib), Cvoid,
+          (Ptr{Cvoid}, Ptr{Cvoid}, Cfloat, Cfloat),
+          p.ptr, g.ptr, Float32(lr), Float32(wd))
+
+"""
+    train_rmsprop_update(p, g, cache, lr, decay, eps, wd)
+
+In-place RMSProp parameter update.
+`cache` – running-mean-square buffer (updated in place).
+"""
+train_rmsprop_update(p::Matrix, g::Matrix, cache::Matrix,
+                     lr::Real, decay::Real, eps::Real, wd::Real) =
+    ccall((:gf_train_rmsprop_update, _lib), Cvoid,
+          (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Cfloat, Cfloat, Cfloat, Cfloat),
+          p.ptr, g.ptr, cache.ptr, Float32(lr), Float32(decay), Float32(eps), Float32(wd))
+
+"""Apply label smoothing to `labels`, clamping values to [lo, hi]. Returns a new `Matrix`."""
+train_label_smoothing(labels::Matrix, lo::Real, hi::Real) =
+    _mat(ccall((:gf_train_label_smoothing, _lib), Ptr{Cvoid},
+               (Ptr{Cvoid}, Cfloat, Cfloat), labels.ptr, Float32(lo), Float32(hi)))
+
+"""Load a BMP image file as a `Dataset`."""
+train_load_bmp(path::AbstractString) =
+    _ds(ccall((:gf_train_load_bmp, _lib), Ptr{Cvoid}, (Cstring,), path))
+
+"""Load a WAV audio file as a `Dataset`."""
+train_load_wav(path::AbstractString) =
+    _ds(ccall((:gf_train_load_wav, _lib), Ptr{Cvoid}, (Cstring,), path))
+
+"""Augment a single `sample` for the given `data_type`. Returns a new `Matrix`."""
+train_augment(sample::Matrix, data_type::AbstractString) =
+    _mat(ccall((:gf_train_augment, _lib), Ptr{Cvoid},
+               (Ptr{Cvoid}, Cstring), sample.ptr, data_type))
+
+"""Append a `Metrics` snapshot to `filename` (CSV/text log)."""
+train_log_metrics(m::Metrics, filename::AbstractString) =
+    ccall((:gf_train_log_metrics, _lib), Cvoid, (Ptr{Cvoid}, Cstring), m.ptr, filename)
+
+"""Save generator samples for epoch `ep` into `dir`."""
+train_save_samples(gen::Network, ep::Integer, dir::AbstractString,
+                   noise_dim::Integer, noise_type::AbstractString) =
+    ccall((:gf_train_save_samples, _lib), Cvoid,
+          (Ptr{Cvoid}, Cint, Cstring, Cint, Cstring),
+          gen.ptr, Cint(ep), dir, Cint(noise_dim), noise_type)
+
+"""
+    train_plot_csv(filename, d_loss, g_loss, cnt)
+
+Write a CSV plot file with `cnt` (d_loss, g_loss) rows from the supplied
+`Vector{Float32}` arrays.
+"""
+function train_plot_csv(filename::AbstractString,
+                        d_loss::AbstractVector{Float32},
+                        g_loss::AbstractVector{Float32},
+                        cnt::Integer)
+    ccall((:gf_train_plot_csv, _lib), Cvoid,
+          (Cstring, Ptr{Cfloat}, Ptr{Cfloat}, Cint),
+          filename, d_loss, g_loss, Cint(cnt))
+end
+
+"""Print a training progress bar to stdout."""
+train_print_bar(d_loss::Real, g_loss::Real, width::Integer) =
+    ccall((:gf_train_print_bar, _lib), Cvoid,
+          (Cfloat, Cfloat, Cint), Float32(d_loss), Float32(g_loss), Cint(width))
+
+"""Compute the Fréchet Inception Distance between `real_arr` and `fake_arr` sample sets."""
+train_compute_fid(real_arr::GanMatrixArray, fake_arr::GanMatrixArray) =
+    Float32(ccall((:gf_train_compute_fid, _lib), Cfloat,
+                  (Ptr{Cvoid}, Ptr{Cvoid}), real_arr.ptr, fake_arr.ptr))
+
+"""Compute the Inception Score for a `GanMatrixArray` of generated samples."""
+train_compute_is(samples::GanMatrixArray) =
+    Float32(ccall((:gf_train_compute_is, _lib), Cfloat, (Ptr{Cvoid},), samples.ptr))
+
+# ─── Security extensions ──────────────────────────────────────────────────────
+
+"""Return one random byte obtained from the OS entropy source."""
+sec_get_os_random() =
+    ccall((:gf_sec_get_os_random, _lib), UInt8, ())
+
+"""Encrypt the model file at `in_f`, writing ciphertext to `out_f` using `key`."""
+sec_encrypt_model(in_f::AbstractString, out_f::AbstractString, key::AbstractString) =
+    ccall((:gf_sec_encrypt_model, _lib), Cvoid, (Cstring, Cstring, Cstring), in_f, out_f, key)
+
+"""Decrypt the model file at `in_f`, writing plaintext to `out_f` using `key`."""
+sec_decrypt_model(in_f::AbstractString, out_f::AbstractString, key::AbstractString) =
+    ccall((:gf_sec_decrypt_model, _lib), Cvoid, (Cstring, Cstring, Cstring), in_f, out_f, key)
+
+"""Run the built-in security test suite. Returns the number of failures (0 = all passed)."""
+sec_run_tests() =
+    Int(ccall((:gf_sec_run_tests, _lib), Cint, ()))
+
+"""Run `iterations` rounds of fuzz testing. Returns the number of failures."""
+sec_run_fuzz_tests(iterations::Integer) =
+    Int(ccall((:gf_sec_run_fuzz_tests, _lib), Cint, (Cint,), Cint(iterations)))
+
 end # module FacadedGan

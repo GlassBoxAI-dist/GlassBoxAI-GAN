@@ -115,6 +115,17 @@ public:
         return gf_matrix_safe_get(p_, r, c, def);
     }
 
+    // --- In-place ops ---
+    void add_in_place(const Matrix& b)    { gf_matrix_add_in_place(p_, b.p_); }
+    void scale_in_place(float s)          { gf_matrix_scale_in_place(p_, s); }
+    void clip_in_place(float lo, float hi){ gf_matrix_clip_in_place(p_, lo, hi); }
+    void safe_set(int r, int c, float v)  { gf_matrix_safe_set(p_, r, c, v); }
+
+    /** Activation backward pass.  act: "relu","sigmoid","tanh","leaky","none". */
+    Matrix activation_backward(const Matrix& pre_act, const char* act) const {
+        return Matrix(detail::check(gf_activation_backward(p_, pre_act.p_, act)));
+    }
+
     // --- Activations --- (each returns a new Matrix)
     Matrix relu()                    const { return Matrix(detail::check(gf_relu(p_))); }
     Matrix sigmoid()                 const { return Matrix(detail::check(gf_sigmoid(p_))); }
@@ -307,6 +318,44 @@ public:
     void save(const std::string& path)  { gf_network_save(p_, path.c_str()); }
     void load(const std::string& path)  { gf_network_load(p_, path.c_str()); }
 
+    // --- Generator extensions ---
+    Matrix sample_conditional(int count, int noise_dim, int cond_sz,
+                               const char* noise_type, const Matrix& cond) {
+        return Matrix(detail::check(
+            gf_gen_sample_conditional(p_, count, noise_dim, cond_sz,
+                                      noise_type, cond.native())));
+    }
+    void   add_progressive_layer(int res_lvl) { gf_gen_add_progressive_layer(p_, res_lvl); }
+    Matrix get_layer_output(int idx) const {
+        return Matrix(detail::check(gf_gen_get_layer_output(p_, idx)));
+    }
+    Network deep_copy() const {
+        return Network(detail::check(gf_gen_deep_copy(p_)));
+    }
+
+    // --- Discriminator extensions ---
+    Matrix disc_evaluate(const Matrix& inp) {
+        return Matrix(detail::check(gf_disc_evaluate(p_, inp.native())));
+    }
+    float disc_grad_penalty(const Matrix& real, const Matrix& fake, float lambda) {
+        return gf_disc_grad_penalty(p_, real.native(), fake.native(), lambda);
+    }
+    float disc_feature_match(const Matrix& real, const Matrix& fake, int feat_layer) {
+        return gf_disc_feature_match(p_, real.native(), fake.native(), feat_layer);
+    }
+    void disc_add_progressive_layer(int res_lvl) {
+        gf_disc_add_progressive_layer(p_, res_lvl);
+    }
+    Matrix disc_get_layer_output(int idx) const {
+        return Matrix(detail::check(gf_disc_get_layer_output(p_, idx)));
+    }
+    Network disc_deep_copy() const {
+        return Network(detail::check(gf_disc_deep_copy(p_)));
+    }
+
+    // --- Optimizer shortcut ---
+    void optimize() { gf_train_optimize(p_); }
+
     GanNetwork*       native()       { return p_; }
     const GanNetwork* native() const { return p_; }
 
@@ -325,6 +374,12 @@ public:
     }
     static Dataset load(const std::string& path, const char* data_type = "vector") {
         return Dataset(detail::check(gf_dataset_load(path.c_str(), data_type)));
+    }
+    static Dataset load_bmp(const std::string& path) {
+        return Dataset(detail::check(gf_train_load_bmp(path.c_str())));
+    }
+    static Dataset load_wav(const std::string& path) {
+        return Dataset(detail::check(gf_train_load_wav(path.c_str())));
     }
 
     explicit Dataset(GanDataset* p) : p_(p) {}
@@ -370,6 +425,9 @@ public:
     int   epoch()        const { return gf_metrics_epoch(p_); }
     int   batch()        const { return gf_metrics_batch(p_); }
 
+    GanMetrics*       native()       { return p_; }
+    const GanMetrics* native() const { return p_; }
+
 private:
     GanMetrics* p_ = nullptr;
 };
@@ -400,6 +458,102 @@ public:
 
 private:
     GanResult* p_ = nullptr;
+};
+
+/* =========================================================================
+ * MatrixArray  (for FID / IS metrics)
+ * ========================================================================= */
+class MatrixArray {
+public:
+    MatrixArray() : p_(detail::check(gf_matrix_array_create())) {}
+    explicit MatrixArray(GanMatrixArray* p) : p_(p) {}
+    ~MatrixArray() { if (p_) gf_matrix_array_free(p_); }
+    MatrixArray(const MatrixArray&)            = delete;
+    MatrixArray& operator=(const MatrixArray&) = delete;
+    MatrixArray(MatrixArray&& o) noexcept : p_(o.p_) { o.p_ = nullptr; }
+    MatrixArray& operator=(MatrixArray&& o) noexcept {
+        if (this != &o) { if (p_) gf_matrix_array_free(p_); p_ = o.p_; o.p_ = nullptr; }
+        return *this;
+    }
+
+    void push(const Matrix& m) { gf_matrix_array_push(p_, m.native()); }
+    int  len()           const { return gf_matrix_array_len(p_); }
+
+    GanMatrixArray*       native()       { return p_; }
+    const GanMatrixArray* native() const { return p_; }
+
+private:
+    GanMatrixArray* p_ = nullptr;
+};
+
+/* =========================================================================
+ * Layer  (GanLayer RAII wrapper)
+ * ========================================================================= */
+class Layer {
+public:
+    /** Adopt an existing GanLayer* (takes ownership). */
+    explicit Layer(GanLayer* p) : p_(detail::check(p)) {}
+    ~Layer() { if (p_) gf_layer_free(p_); }
+    Layer(const Layer&)            = delete;
+    Layer& operator=(const Layer&) = delete;
+    Layer(Layer&& o) noexcept : p_(o.p_) { o.p_ = nullptr; }
+    Layer& operator=(Layer&& o) noexcept {
+        if (this != &o) { if (p_) gf_layer_free(p_); p_ = o.p_; o.p_ = nullptr; }
+        return *this;
+    }
+
+    // --- factories ---
+    static Layer dense(int in_sz, int out_sz, const char* act = "relu") {
+        return Layer(detail::check(gf_layer_create_dense(in_sz, out_sz, act)));
+    }
+    static Layer conv2d(int in_ch, int out_ch, int k, int s, int pad,
+                        int w, int h, const char* act = "leaky") {
+        return Layer(detail::check(gf_layer_create_conv2d(in_ch, out_ch, k, s, pad, w, h, act)));
+    }
+    static Layer deconv2d(int in_ch, int out_ch, int k, int s, int pad,
+                          int w, int h, const char* act = "relu") {
+        return Layer(detail::check(gf_layer_create_deconv2d(in_ch, out_ch, k, s, pad, w, h, act)));
+    }
+    static Layer conv1d(int in_ch, int out_ch, int k, int s, int pad,
+                        int in_len, const char* act = "leaky") {
+        return Layer(detail::check(gf_layer_create_conv1d(in_ch, out_ch, k, s, pad, in_len, act)));
+    }
+    static Layer batch_norm(int features) {
+        return Layer(detail::check(gf_layer_create_batch_norm(features)));
+    }
+    static Layer layer_norm(int features) {
+        return Layer(detail::check(gf_layer_create_layer_norm(features)));
+    }
+    static Layer attention(int d_model, int n_heads) {
+        return Layer(detail::check(gf_layer_create_attention(d_model, n_heads)));
+    }
+
+    // --- dispatch ---
+    Matrix forward(const Matrix& inp)  { return Matrix(detail::check(gf_layer_forward(p_, inp.native()))); }
+    Matrix backward(const Matrix& grad){ return Matrix(detail::check(gf_layer_backward(p_, grad.native()))); }
+    void   init_optimizer(const char* opt = "adam") { gf_layer_init_optimizer(p_, opt); }
+
+    // --- specific ops ---
+    Matrix conv2d_fwd(const Matrix& inp)        { return Matrix(detail::check(gf_layer_conv2d(inp.native(), p_))); }
+    Matrix conv2d_bwd(const Matrix& grad)       { return Matrix(detail::check(gf_layer_conv2d_backward(p_, grad.native()))); }
+    Matrix deconv2d_fwd(const Matrix& inp)      { return Matrix(detail::check(gf_layer_deconv2d(inp.native(), p_))); }
+    Matrix deconv2d_bwd(const Matrix& grad)     { return Matrix(detail::check(gf_layer_deconv2d_backward(p_, grad.native()))); }
+    Matrix conv1d_fwd(const Matrix& inp)        { return Matrix(detail::check(gf_layer_conv1d(inp.native(), p_))); }
+    Matrix conv1d_bwd(const Matrix& grad)       { return Matrix(detail::check(gf_layer_conv1d_backward(p_, grad.native()))); }
+    Matrix batch_norm_fwd(const Matrix& inp)    { return Matrix(detail::check(gf_layer_batch_norm(inp.native(), p_))); }
+    Matrix batch_norm_bwd(const Matrix& grad)   { return Matrix(detail::check(gf_layer_batch_norm_backward(p_, grad.native()))); }
+    Matrix layer_norm_fwd(const Matrix& inp)    { return Matrix(detail::check(gf_layer_layer_norm(inp.native(), p_))); }
+    Matrix layer_norm_bwd(const Matrix& grad)   { return Matrix(detail::check(gf_layer_layer_norm_backward(p_, grad.native()))); }
+    Matrix spectral_norm()                      { return Matrix(detail::check(gf_layer_spectral_norm(p_))); }
+    Matrix attention_fwd(const Matrix& inp)     { return Matrix(detail::check(gf_layer_attention(inp.native(), p_))); }
+    Matrix attention_bwd(const Matrix& grad)    { return Matrix(detail::check(gf_layer_attention_backward(p_, grad.native()))); }
+    void   verify_weights()                     { gf_layer_verify_weights(p_); }
+
+    GanLayer*       native()       { return p_; }
+    const GanLayer* native() const { return p_; }
+
+private:
+    GanLayer* p_ = nullptr;
 };
 
 /* =========================================================================
@@ -484,14 +638,47 @@ inline float random_gaussian() { return gf_random_gaussian(); }
 inline float random_uniform(float lo, float hi) { return gf_random_uniform(lo, hi); }
 
 // --- Security ---
-inline bool        validate_path(const std::string& path) {
+inline bool validate_path(const std::string& path) {
     return gf_validate_path(path.c_str()) != 0;
 }
-inline void        audit_log(const std::string& msg, const std::string& file) {
+inline void audit_log(const std::string& msg, const std::string& file) {
     gf_audit_log(msg.c_str(), file.c_str());
 }
-inline bool        bounds_check(const Matrix& m, int r, int c) {
+inline bool bounds_check(const Matrix& m, int r, int c) {
     return gf_bounds_check(m.native(), r, c) != 0;
+}
+
+// --- Security extensions ---
+inline unsigned char sec_get_os_random() { return gf_sec_get_os_random(); }
+inline void sec_encrypt_model(const std::string& in_f, const std::string& out_f,
+                               const std::string& key) {
+    gf_sec_encrypt_model(in_f.c_str(), out_f.c_str(), key.c_str());
+}
+inline void sec_decrypt_model(const std::string& in_f, const std::string& out_f,
+                               const std::string& key) {
+    gf_sec_decrypt_model(in_f.c_str(), out_f.c_str(), key.c_str());
+}
+inline bool sec_run_tests()                    { return gf_sec_run_tests() != 0; }
+inline bool sec_run_fuzz_tests(int iterations) { return gf_sec_run_fuzz_tests(iterations) != 0; }
+
+// --- Training extensions ---
+inline Matrix label_smoothing(const Matrix& labels, float lo, float hi) {
+    return Matrix(detail::check(gf_train_label_smoothing(labels.native(), lo, hi)));
+}
+inline Matrix disc_minibatch_std_dev(const Matrix& inp) {
+    return Matrix(detail::check(gf_disc_minibatch_std_dev(inp.native())));
+}
+inline void train_log_metrics(Metrics& m, const std::string& filename) {
+    gf_train_log_metrics(m.native(), filename.c_str());
+}
+inline void train_print_bar(float d_loss, float g_loss, int width = 40) {
+    gf_train_print_bar(d_loss, g_loss, width);
+}
+inline float compute_fid(const MatrixArray& real_arr, const MatrixArray& fake_arr) {
+    return gf_train_compute_fid(real_arr.native(), fake_arr.native());
+}
+inline float compute_is(const MatrixArray& samples) {
+    return gf_train_compute_is(samples.native());
 }
 
 } // namespace facaded_gan
